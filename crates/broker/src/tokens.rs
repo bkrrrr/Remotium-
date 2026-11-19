@@ -23,6 +23,9 @@ pub const REFRESH_TTL: u64 = 12 * 3600;
 pub const STREAM_TTL: u64 = 60;
 /// A session with no stream activity for this long is forgotten.
 pub const SESSION_IDLE_TTL: u64 = 24 * 3600;
+/// A rotated refresh token still works this long, so two editor windows that share tokens
+/// and refresh at the same moment don't sign each other out.
+pub const REFRESH_REUSE_GRACE: u64 = 60;
 
 type Hash = String;
 
@@ -58,8 +61,9 @@ pub struct ClientGrant {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct RefreshEntry {
     grant: ClientGrant,
-    /// Set once rotated; kept until expiry to detect reuse.
-    used: bool,
+    /// When it was rotated; kept until expiry to detect reuse.
+    #[serde(default)]
+    used_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -179,7 +183,7 @@ impl Tokens {
         let n = now();
         let grant = |expires| ClientGrant { user: user.into(), env: env.into(), family: family.into(), expires };
         g.p.access.insert(hash(&at), grant(n + ACCESS_TTL));
-        g.p.refresh.insert(hash(&rt), RefreshEntry { grant: grant(n + REFRESH_TTL), used: false });
+        g.p.refresh.insert(hash(&rt), RefreshEntry { grant: grant(n + REFRESH_TTL), used_at: None });
         TokenPair {
             access_token: at,
             access_expires_in: ACCESS_TTL,
@@ -198,7 +202,7 @@ impl Tokens {
         if g.p.revoked_families.contains_key(&entry.grant.family) {
             return Err(TokenError::Invalid);
         }
-        if entry.used {
+        if entry.used_at.is_some_and(|t| now() > t + REFRESH_REUSE_GRACE) {
             tracing::warn!(user = entry.grant.user, "refresh token reuse; revoking its sign-in");
             Self::revoke_family_locked(&mut g, &entry.grant.family);
             self.save(&g);
@@ -207,7 +211,8 @@ impl Tokens {
         if entry.grant.expires < now() {
             return Err(TokenError::Expired);
         }
-        g.p.refresh.get_mut(&key).unwrap().used = true;
+        let e = g.p.refresh.get_mut(&key).unwrap();
+        e.used_at.get_or_insert(now());
         let pair = Self::issue_pair(&mut g, &entry.grant.user, &entry.grant.env, &entry.grant.family);
         self.save(&g);
         Ok(pair)
@@ -333,6 +338,15 @@ impl Tokens {
     }
 
     #[cfg(test)]
+    fn age_rotations(&self, secs: u64) {
+        for r in self.inner.lock().unwrap().p.refresh.values_mut() {
+            if let Some(t) = r.used_at.as_mut() {
+                *t -= secs;
+            }
+        }
+    }
+
+    #[cfg(test)]
     fn expire_all_tickets(&self) {
         for t in self.inner.lock().unwrap().tickets.values_mut() {
             t.expires = 0;
@@ -378,6 +392,9 @@ mod tests {
 
         let p2 = t.refresh(&p1.refresh_token).unwrap();
         assert!(t.check_access(&p2.access_token).is_ok());
+        // Within the grace period a second refresh with the old token still works.
+        assert!(t.refresh(&p1.refresh_token).is_ok());
+        t.age_rotations(REFRESH_REUSE_GRACE + 1);
         // Reusing the rotated token revokes the family, sessions included.
         assert_eq!(t.refresh(&p1.refresh_token).unwrap_err(), TokenError::Reused);
         assert!(t.check_access(&p2.access_token).is_err());
