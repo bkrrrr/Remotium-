@@ -65,6 +65,10 @@ const args = [
 	'--disable-workspace-trust',
 	'--skip-welcome', '--skip-release-notes', '--disable-gpu',
 	...(folderUri ? ['--folder-uri', folderUri] : []),
+	// No keyring on headless Linux (CI): keep secrets in the profile instead.
+	...(process.platform === 'linux' ? ['--password-store=basic'] : []),
+	// Extra editor flags, e.g. --no-sandbox on CI runners that restrict user namespaces.
+	...(process.env.E2E_CODIUM_ARGS ? process.env.E2E_CODIUM_ARGS.split(/\s+/).filter(Boolean) : []),
 ];
 console.log(`launching ${codium}`);
 const env = { ...process.env, SMOKE_RESULT: resultFile };

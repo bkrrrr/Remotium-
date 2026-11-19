@@ -131,6 +131,11 @@ End-to-end with a real VSCodium (needs the compose stack running):
 npm --prefix client run test:e2e
 ```
 
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the Rust tests and clippy,
+packages the VSIX, and runs the phase 3 suite in VSCodium under Xvfb against the compose
+stack, for the release pinned in `compat.json` and the latest VSCodium release (also weekly,
+to catch upstream changes early).
+
 Without a broker, the M0 direct mode connects VSCodium straight to an agent. See
 [feasibility](docs/feasibility.md).
 

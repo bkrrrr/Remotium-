@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Catch VSCodium releases that change the proposed API or the server layout.
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Test (unit + broker/agent integration, needs python3)
+        run: cargo test --workspace --locked
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opentunnel-client-vsix
+          path: client/opentunnel-client.vsix
+
+  e2e:
+    needs: [rust, client]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        vscodium: [pinned, latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Pick the VSCodium version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ matrix.vscodium }}" = pinned ]; then
+            v=$(jq -r '.pinned.version + (if .pinned.release then "." + .pinned.release else "" end)' compat.json)
+          else
+            v=$(gh api repos/VSCodium/vscodium/releases/latest --jq .tag_name)
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "VSCodium $v"
+
+      - name: Download VSCodium
+        run: |
+          v=${{ steps.version.outputs.version }}
+          mkdir -p "$RUNNER_TEMP/vscodium"
+          curl -fsSL -o "$RUNNER_TEMP/vscodium.tgz" \
+            "https://github.com/VSCodium/vscodium/releases/download/$v/VSCodium-linux-x64-$v.tar.gz"
+          tar -xzf "$RUNNER_TEMP/vscodium.tgz" -C "$RUNNER_TEMP/vscodium"
+          echo "VSCODIUM_PATH=$RUNNER_TEMP/vscodium/codium" >> "$GITHUB_ENV"
+
+      - name: Start broker and devenv
+        run: |
+          docker compose -f deploy/docker-compose.yml up --build -d
+          for i in $(seq 1 60); do
+            curl -fs localhost:8080/api/v1/status | grep -q '"envsOnline":1' && break
+            sleep 2
+          done
+          curl -fs localhost:8080/api/v1/status
+
+      - name: Install client dependencies
+        run: npm --prefix client ci
+
+      - name: Phase 3 suite in VSCodium (Xvfb)
+        env:
+          E2E_CODIUM_ARGS: --no-sandbox
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgbm1 libnss3 libasound2t64 >/dev/null
+          mkdir -p "$RUNNER_TEMP/e2e"
+          xvfb-run -a npm --prefix client run test:phase3 -- --work "$RUNNER_TEMP/e2e"
+
+      - name: Logs
+        if: always()
+        run: |
+          docker compose -f deploy/docker-compose.yml logs --no-color > "$RUNNER_TEMP/e2e/compose.log" 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-${{ matrix.vscodium }}
+          path: ${{ runner.temp }}/e2e
