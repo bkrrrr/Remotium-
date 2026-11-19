@@ -58,9 +58,16 @@ pub fn parse_listening_port(line: &str) -> Option<u16> {
 pub async fn start(install_dir: &Path, state_dir: &Path, extra_args: &[String]) -> Result<RunningServer> {
     let bin = server_binary(install_dir)?;
     std::fs::create_dir_all(state_dir)?;
-    let token = random_token();
+    // Reuse the token across restarts so a client that still holds it can reconnect.
     let token_file = state_dir.join("connection-token");
-    write_private(&token_file, token.as_bytes())?;
+    let token = match std::fs::read_to_string(&token_file) {
+        Ok(t) if t.len() >= 32 && t.bytes().all(|b| b.is_ascii_hexdigit()) => t,
+        _ => {
+            let t = random_token();
+            write_private(&token_file, t.as_bytes())?;
+            t
+        }
+    };
 
     let mut cmd = Command::new(&bin);
     cmd.arg("--host")
