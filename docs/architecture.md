@@ -81,7 +81,10 @@ A restarted agent adopts them from `server.json` (pid, port), and editor session
 ## Reliability
 
 - **Keepalive:** WebSocket pings every 25 s (configurable) on all hops, below common proxy
-  idle timeouts. A link that receives nothing for 3–4 intervals is treated as dead. The client
+  idle timeouts. A link that receives nothing for 3–4 intervals, and doesn't answer a ping
+  sent at least one interval earlier, is treated as dead. After our own process was stalled
+  (e.g. a suspended Docker VM: a keepalive tick arrives far too late) the silence isn't held
+  against the peer; frames already waiting are read first and a fresh ping is sent. The client
   drops a WebSocket that gets no pong for 40 s, so half-open connections (NAT, proxies,
   container restarts behind Docker's port proxy) are noticed quickly.
 - **Agent link:** reconnects with jittered exponential backoff (1 s … 60 s). A newer

@@ -102,6 +102,11 @@ where
         })
         .await;
         drop(pending);
+        // The caller may see only a symptom (a closed stream); log the cause here.
+        match &res {
+            Ok(()) => tracing::debug!("mux connection closed"),
+            Err(e) => tracing::warn!("mux connection failed: {e}"),
+        }
         res
     });
     (MuxHandle { open_tx }, in_rx, task)
