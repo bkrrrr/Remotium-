@@ -19,7 +19,7 @@ const defaultCodium = process.platform === 'darwin'
 	: 'codium';
 const codium = arg('codium', process.env.VSCODIUM_PATH || defaultCodium);
 const folderUri = arg('folder-uri');
-const work = arg('work', fs.mkdtempSync(path.join(os.tmpdir(), 'opentunnel-e2e-')));
+const work = arg('work') || fs.mkdtempSync(path.join(os.tmpdir(), 'opentunnel-e2e-'));
 fs.mkdirSync(work, { recursive: true });
 const settings = JSON.parse(arg('settings', '{}'));
 const timeoutMs = Number(arg('timeout', '180000'));
