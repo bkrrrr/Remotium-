@@ -10,6 +10,8 @@ export interface WsConnectOptions {
 	headers?: Record<string, string>;
 	log: vscode.LogOutputChannel;
 	label: string;
+	/** Called once the stream is closed after it was open. */
+	onClosed?: (error?: Error) => void;
 }
 
 /** Error raised when the WebSocket could not be opened, with the HTTP status or WS close code. */
@@ -104,8 +106,10 @@ export function connectWs(url: string, opts: WsConnectOptions): Promise<vscode.M
 				return;
 			}
 			log.debug(`${label}: websocket closed ${code} ${why}`);
+			const err = code === 1000 || code === 1005 ? undefined : new WsConnectError(`websocket closed: ${code} ${why}`, undefined, code);
 			onEnd.fire();
-			onClose.fire(code === 1000 || code === 1005 ? undefined : new WsConnectError(`websocket closed: ${code} ${why}`, undefined, code));
+			onClose.fire(err);
+			opts.onClosed?.(err);
 			onMessage.dispose();
 		});
 

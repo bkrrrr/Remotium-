@@ -20,6 +20,12 @@ exports.run = async function run() {
 		if (!folder) throw new Error('no workspace folder');
 		step(`folder ${folder.uri.toString()} remoteName=${vscode.env.remoteName}`);
 		if (folder.uri.scheme !== 'vscode-remote') throw new Error('workspace is not remote');
+		// The test can start before the remote connection is resolved.
+		const t0 = Date.now();
+		await waitFor(async () => {
+			try { await vscode.workspace.fs.stat(folder.uri); return true; } catch { return false; }
+		}, 120000, 'remote file system');
+		step(`remote file system ready after ${Date.now() - t0} ms`);
 
 		const readme = vscode.Uri.joinPath(folder.uri, 'README.md');
 		const marker = `edited over opentunnel ${Date.now()}`;

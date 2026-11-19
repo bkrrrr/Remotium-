@@ -1,0 +1,18 @@
+{
+  "name": "e2e-helper",
+  "publisher": "opentunnel-test",
+  "version": "0.0.0",
+  "private": true,
+  "engines": { "vscode": "^1.100.0" },
+  "extensionKind": ["ui"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "configuration": {
+      "properties": {
+        "opentunnelE2e.launchLink": { "type": "string", "default": "" },
+        "opentunnelE2e.resultFile": { "type": "string", "default": "" }
+      }
+    }
+  }
+}

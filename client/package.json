@@ -21,7 +21,7 @@
   "activationEvents": [
     "onResolveRemoteAuthority:opentunnel",
     "onUri",
-    "onStartupFinished"
+    "onCommand:opentunnel.openLaunchLink"
   ],
   "contributes": {
     "configuration": {
@@ -46,6 +46,10 @@
     },
     "commands": [
       {
+        "command": "opentunnel.openLaunchLink",
+        "title": "OpenTunnel: Open Launch Link"
+      },
+      {
         "command": "opentunnel.connectDirect",
         "title": "OpenTunnel: Connect Direct (dev)"
       },
@@ -60,6 +64,10 @@
       {
         "command": "opentunnel.showLog",
         "title": "OpenTunnel: Show Log"
+      },
+      {
+        "command": "opentunnel.menu",
+        "title": "OpenTunnel: Connection Menu"
       }
     ],
     "resourceLabelFormatters": [
@@ -73,7 +81,19 @@
           "workspaceSuffix": "OpenTunnel"
         }
       }
-    ]
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "opentunnel.menu",
+          "when": "remoteName == opentunnel"
+        },
+        {
+          "command": "opentunnel.disconnect",
+          "when": "remoteName == opentunnel"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "tsc --noEmit -p . && esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --external:bufferutil --external:utf-8-validate --outfile=out/extension.js --sourcemap",
