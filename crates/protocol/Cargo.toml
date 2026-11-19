@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+axum = { version = "0.8.9", features = ["ws"], optional = true }
 bytes = "1.12.2"
 futures = "0.3.34"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -15,3 +16,6 @@ tokio-util = { version = "0.7.20", features = ["compat"] }
 tracing = "0.1.44"
 tungstenite = "0.30.0"
 yamux = "0.14.1"
+
+[features]
+axum = ["dep:axum"]
