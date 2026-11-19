@@ -40,9 +40,17 @@ impl MuxHandle {
     }
 }
 
+/// Concurrent streams per link. One editor window uses a handful (management, extension
+/// host, one per forwarded port connection).
+pub const MAX_STREAMS: usize = 256;
+
+/// Bounds the memory one link can buffer. yamux needs at least 256 KiB per stream.
+pub const MAX_CONNECTION_WINDOW: usize = MAX_STREAMS * 256 * 1024;
+
 pub fn config() -> yamux::Config {
     let mut cfg = yamux::Config::default();
-    cfg.set_max_num_streams(1024);
+    cfg.set_max_num_streams(MAX_STREAMS);
+    cfg.set_max_connection_receive_window(Some(MAX_CONNECTION_WINDOW));
     cfg
 }
 
