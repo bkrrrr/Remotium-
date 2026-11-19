@@ -1,0 +1,23 @@
+# Static musl build of the broker on a minimal Alpine runtime.
+FROM rust:1-alpine AS build
+RUN apk add --no-cache musl-dev build-base
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY crates crates
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked -p opentunnel-broker \
+ && install -Dm755 target/release/opentunnel-broker /out/opentunnel-broker
+
+FROM alpine:3
+RUN apk add --no-cache ca-certificates \
+ && adduser -D -H -u 10001 opentunnel \
+ && mkdir -p /var/lib/opentunnel /etc/opentunnel \
+ && chown opentunnel /var/lib/opentunnel
+COPY --from=build /out/opentunnel-broker /usr/local/bin/opentunnel-broker
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/opentunnel/
+USER opentunnel
+ENV BROKER_CONFIG=/etc/opentunnel/broker.toml
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/opentunnel-broker"]
+CMD ["serve"]

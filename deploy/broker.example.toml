@@ -1,0 +1,60 @@
+# OpenTunnel broker configuration. Copy to broker.toml and adjust.
+# Check it with: opentunnel-broker -c broker.toml check-config
+
+[server]
+# One listener for everything. Behind a reverse proxy, listen on loopback or a private
+# address and let the proxy terminate TLS.
+listen = "0.0.0.0:443"
+# Optional: a second listener just for the data plane (/data/*, /agent/*). Then `listen`
+# serves only the dashboard and the control API.
+# data_listen = "0.0.0.0:8443"
+# public_data_url = "https://data.tunnels.example.com"
+
+# How clients and agents reach this broker.
+public_url = "https://tunnels.example.com"
+
+# Serve HTTPS directly (e.g. Let's Encrypt). Renewed files are picked up every 6 hours.
+tls_cert = "/etc/letsencrypt/live/tunnels.example.com/fullchain.pem"
+tls_key = "/etc/letsencrypt/live/tunnels.example.com/privkey.pem"
+
+# Client tokens (hashed) survive restarts here.
+state_file = "/var/lib/opentunnel/state.json"
+
+# WebSocket ping interval; keep it below your proxies' idle timeouts.
+keepalive_secs = 25
+# URI scheme of the editor the dashboard links to.
+editor_scheme = "vscodium"
+
+[auth]
+# Identity comes from an auth proxy in front of the broker (oauth2-proxy, Authelia,
+# nginx auth_request, Cloudflare Access, ...). Only these paths need the proxy login:
+#   /  /launch  /api/v1/environments  /api/v1/launch-tickets
+# These must bypass it (they use the broker's own tokens):
+#   /api/v1/tokens*  /api/v1/sessions*  /data/*  /agent/*  /healthz  /api/v1/status
+trusted_header = "X-Forwarded-Email"
+trusted_proxies = ["127.0.0.1/32", "::1/128"]
+
+# Alternatively (or additionally) verify a signed identity assertion, e.g. Cloudflare Access:
+# [auth.jwt]
+# header = "Cf-Access-Jwt-Assertion"
+# jwks_url = "https://<team>.cloudflareaccess.com/cdn-cgi/access/certs"
+# audience = "<application AUD tag>"
+# issuer = "https://<team>.cloudflareaccess.com"
+# email_claim = "email"
+# require_trusted_proxy = true
+
+# One block per environment (dev container). Generate a token with
+#   opentunnel-broker gen-token
+# give the token to the agent (AGENT_TOKEN) and put only its hash here.
+[[env]]
+id = "alice-dev"
+name = "Alice's dev box"
+agent_token_sha256 = "<64 hex chars>"
+# projects = ["api", "web"]       # default: whatever the agent advertises
+# workspace_root = "/workspace"
+
+# Who may open what. users: exact email, "*@domain" or "*". envs/projects: ids or "*".
+[[grant]]
+users = ["alice@example.com"]
+envs = ["alice-dev"]
+projects = ["*"]

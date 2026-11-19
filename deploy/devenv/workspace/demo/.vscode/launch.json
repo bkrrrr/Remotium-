@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Node: index.js",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/index.js"
+    },
+    {
+      "name": "Python: app.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/app.py",
+      "console": "integratedTerminal"
+    }
+  ]
+}
