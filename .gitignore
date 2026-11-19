@@ -1,0 +1,10 @@
+target/
+node_modules/
+client/out/
+client/.vscode-test/
+*.vsix
+.data/
+servers/
+deploy/broker.toml
+!deploy/broker.example.toml
+.DS_Store

@@ -1,0 +1,96 @@
+{
+  "name": "client",
+  "displayName": "OpenTunnel",
+  "description": "Open-source remote tunnels for VSCodium: connect to a dev container through an OpenTunnel broker.",
+  "publisher": "opentunnel",
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "enabledApiProposals": [
+    "resolvers"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onResolveRemoteAuthority:opentunnel",
+    "onUri",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "OpenTunnel",
+      "properties": {
+        "opentunnel.brokerUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the OpenTunnel broker, e.g. https://tunnels.example.com. Set automatically when a launch link is opened."
+        },
+        "opentunnel.directUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Development only: WebSocket URL of an agent started with --direct-listen. Used for the authority opentunnel+direct and bypasses the broker."
+        },
+        "opentunnel.directConnectionToken": {
+          "type": "string",
+          "default": "",
+          "description": "Development only: connection token printed by the agent in direct mode."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "opentunnel.connectDirect",
+        "title": "OpenTunnel: Connect Direct (dev)"
+      },
+      {
+        "command": "opentunnel.disconnect",
+        "title": "OpenTunnel: Disconnect"
+      },
+      {
+        "command": "opentunnel.signOut",
+        "title": "OpenTunnel: Sign Out"
+      },
+      {
+        "command": "opentunnel.showLog",
+        "title": "OpenTunnel: Show Log"
+      }
+    ],
+    "resourceLabelFormatters": [
+      {
+        "scheme": "vscode-remote",
+        "authority": "opentunnel+*",
+        "formatting": {
+          "label": "${path}",
+          "separator": "/",
+          "tildify": true,
+          "workspaceSuffix": "OpenTunnel"
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsc --noEmit -p . && esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --outfile=out/extension.js --sourcemap",
+    "watch": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --outfile=out/extension.js --sourcemap --watch",
+    "package": "npm run build && vsce package --no-dependencies",
+    "test:unit": "npm run build:test && node --test out-test/unit/",
+    "build:test": "tsc -p test/tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/vscode": "^1.100.0",
+    "@types/ws": "^8.18.2",
+    "@vscode/vsce": "^4.1.1",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  }
+}

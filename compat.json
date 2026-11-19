@@ -1,0 +1,14 @@
+{
+  "$comment": "VSCodium releases this project is tested against. CI runs the pinned release plus the latest one.",
+  "pinned": {
+    "product": "VSCodium",
+    "version": "1.143.17232",
+    "release": null,
+    "commit": "c072cf642cbbadabefa22f39c58cc902a8b7427f",
+    "quality": "stable",
+    "serverApplicationName": "codium-server",
+    "resolversProposal": "microsoft/vscode@1.143.1 src/vscode-dts/vscode.proposed.resolvers.d.ts"
+  },
+  "serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}${releaseSuffix}/vscodium-reh-${os}-${arch}-${version}${releaseSuffix}.tar.gz",
+  "alsoTest": ["latest"]
+}
