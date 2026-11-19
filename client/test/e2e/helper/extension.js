@@ -14,7 +14,8 @@ exports.activate = async function activate() {
 	try {
 		if (vscode.env.remoteName === 'opentunnel') {
 			process.env.SMOKE_RESULT = resultFile;
-			await require(path.join(__dirname, '..', 'smoke.js')).run().catch(() => {});
+			const suite = cfg.get('suite') || 'smoke';
+			await require(path.join(__dirname, '..', `${suite}.js`)).run().catch(() => {});
 		} else {
 			const ok = await vscode.commands.executeCommand('opentunnel.openLaunchLink', cfg.get('launchLink'));
 			if (ok) return; // The remote window takes over.

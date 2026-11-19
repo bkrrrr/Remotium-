@@ -11,7 +11,10 @@
     "configuration": {
       "properties": {
         "opentunnelE2e.launchLink": { "type": "string", "default": "" },
-        "opentunnelE2e.resultFile": { "type": "string", "default": "" }
+        "opentunnelE2e.resultFile": { "type": "string", "default": "" },
+        "opentunnelE2e.suite": { "type": "string", "default": "smoke" },
+        "opentunnelE2e.controlDir": { "type": "string", "default": "" },
+        "opentunnelE2e.only": { "type": "string", "default": "" }
       }
     }
   }

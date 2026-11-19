@@ -34,6 +34,7 @@ RUN set -eu; \
     echo "pre-baked VSCodium REH $v ($commit)"
 
 COPY --from=agent /out/opentunnel-agent /usr/local/bin/opentunnel-agent
+COPY deploy/devenv/entrypoint.sh /usr/local/bin/devenv-entrypoint
 COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/opentunnel/
 COPY deploy/devenv/workspace /workspace
 
@@ -46,4 +47,4 @@ ENV AGENT_DATA_DIR=/data \
     AGENT_WORKSPACE_ROOT=/workspace \
     AGENT_SERVER_SEARCH_PATH=/opt/vscodium-server
 VOLUME ["/data"]
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/opentunnel-agent"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/devenv-entrypoint"]

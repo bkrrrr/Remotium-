@@ -143,6 +143,11 @@ impl ServerManager {
             tracing::warn!(commit, "server exited, restarting");
             slot.running = None;
         }
+        let state = self.cfg.state_dir.join("servers").join(commit);
+        if let Some(r) = reh::adopt(&state).await {
+            slot.running = Some(r);
+            return Ok(());
+        }
         let install = match &slot.install {
             Some(p) if p.join("product.json").exists() => p.clone(),
             _ => {
@@ -156,7 +161,6 @@ impl ServerManager {
             }
         };
         touch_last_used(&install);
-        let state = self.cfg.state_dir.join("servers").join(commit);
         let data_dir = self.cfg.state_dir.join("server-data");
         let args = vec!["--server-data-dir".to_owned(), data_dir.display().to_string()];
         let running = reh::start(&install, &state, &args).await.map_err(EnsureError::internal)?;
@@ -170,9 +174,10 @@ impl ServerManager {
         let state = self.slot(commit);
         let port = {
             let mut slot = state.slot.lock().await;
-            if slot.version.is_none() && slot.install.is_none() {
+            if slot.running.is_none() && slot.version.is_none() && slot.install.is_none() {
                 slot.install = self.find_install(commit);
-                if slot.install.is_none() {
+                let adoptable = self.cfg.state_dir.join("servers").join(commit).join("server.json").exists();
+                if slot.install.is_none() && !adoptable {
                     return Err(EnsureError::unavailable(anyhow!("no server for commit {commit}; create a session first")));
                 }
             }

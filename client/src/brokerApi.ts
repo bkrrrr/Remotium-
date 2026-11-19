@@ -38,7 +38,7 @@ export interface ServerVersion {
 export class BrokerApi {
 	constructor(readonly baseUrl: string) {}
 
-	private async call<T>(path: string, body: unknown, bearer?: string): Promise<T> {
+	private async call<T>(path: string, body: unknown, bearer?: string, timeoutMs = 20_000): Promise<T> {
 		const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json' };
 		if (bearer) {
 			headers.authorization = `Bearer ${bearer}`;
@@ -49,10 +49,11 @@ export class BrokerApi {
 				method: 'POST',
 				headers,
 				body: JSON.stringify(body ?? {}),
-				signal: AbortSignal.timeout(11 * 60_000),
+				signal: AbortSignal.timeout(timeoutMs),
 			});
 		} catch (e) {
-			throw new BrokerError(0, 'network', `cannot reach broker ${this.baseUrl}: ${(e as Error).message}`);
+			const what = (e as Error).name === 'TimeoutError' ? `no answer within ${timeoutMs / 1000} s` : (e as Error).message;
+			throw new BrokerError(0, 'network', `cannot reach broker ${this.baseUrl} (${path}): ${what}`);
 		}
 		if (res.status === 204) {
 			return undefined as T;
@@ -83,7 +84,8 @@ export class BrokerApi {
 	}
 
 	createSession(accessToken: string, envId: string, v: ServerVersion): Promise<SessionInfo> {
-		return this.call('api/v1/sessions', { envId, ...v }, accessToken);
+		// May wait for the environment to download a matching server.
+		return this.call('api/v1/sessions', { envId, ...v }, accessToken, 11 * 60_000);
 	}
 
 	streamToken(accessToken: string, sessionId: string): Promise<{ streamToken: string; expiresIn: number }> {

@@ -39,7 +39,13 @@ fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify({
 	'update.mode': 'none',
 	'telemetry.telemetryLevel': 'off',
 	...settings,
-	...(launchLink ? { 'opentunnelE2e.launchLink': launchLink, 'opentunnelE2e.resultFile': path.join(work, 'result.json') } : {}),
+	...(launchLink ? {
+		'opentunnelE2e.launchLink': launchLink,
+		'opentunnelE2e.resultFile': path.join(work, 'result.json'),
+		'opentunnelE2e.suite': arg('suite', 'smoke'),
+		'opentunnelE2e.controlDir': work,
+		'opentunnelE2e.only': arg('only', ''),
+	} : {}),
 }, null, 2));
 const resultFile = path.join(work, 'result.json');
 try { fs.unlinkSync(resultFile); } catch { }
@@ -48,6 +54,9 @@ const extRoot = path.resolve(__dirname, '..', '..');
 const args = [
 	'--user-data-dir', userData,
 	'--extensions-dir', path.join(profile, 'ext'),
+	// Otherwise the instance shares ~/.vscode-oss-shared with a running everyday VSCodium and
+	// can hang at startup waiting for it.
+	'--shared-data-dir', path.join(profile, 'shared'),
 	'--extensionDevelopmentPath', extRoot,
 	...(launchLink
 		? ['--extensionDevelopmentPath', path.join(__dirname, 'helper')]
@@ -65,13 +74,28 @@ const child = spawn(codium, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
 const logFile = fs.createWriteStream(path.join(work, 'codium.log'));
 child.stdout.pipe(logFile);
 child.stderr.pipe(logFile);
-child.stdout.on('data', d => { const s = d.toString(); if (s.includes('[smoke]')) process.stdout.write(s); });
+child.stdout.on('data', d => { const s = d.toString(); if (/\[(smoke|phase3)\]/.test(s)) process.stdout.write(s); });
+// Requests from the in-window suite (e.g. restart the broker), answered by --on-request.
+const onRequest = arg('on-request');
+const handled = new Set();
+const control = onRequest && setInterval(() => {
+	for (const f of fs.readdirSync(work)) {
+		const m = /^request-(.+)$/.exec(f);
+		if (!m || handled.has(m[1])) continue;
+		handled.add(m[1]);
+		console.log(`[runner] ${m[1]}`);
+		const r = require('child_process').spawnSync(onRequest, [m[1]], { stdio: 'inherit', shell: false });
+		console.log(`[runner] ${m[1]} → exit ${r.status}`);
+		fs.writeFileSync(path.join(work, `done-${m[1]}`), String(r.status));
+	}
+}, 500);
 // In helper mode the app may not exit on its own if something hangs: stop once a result exists.
 const poll = launchLink && setInterval(() => { if (fs.existsSync(resultFile)) setTimeout(() => child.kill(), 3000); }, 1000);
 const timer = setTimeout(() => { console.error('timeout'); child.kill(); }, timeoutMs);
 child.on('exit', code => {
 	clearTimeout(timer);
 	if (poll) clearInterval(poll);
+	if (control) clearInterval(control);
 	if (!keepProfile) fs.rmSync(profile, { recursive: true, force: true });
 	let result;
 	try { result = JSON.parse(fs.readFileSync(resultFile, 'utf8')); } catch { }

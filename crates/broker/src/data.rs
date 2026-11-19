@@ -6,14 +6,14 @@ use crate::{
 };
 use axum::{
     extract::{
-        ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
+        ws::{WebSocket, WebSocketUpgrade},
         ConnectInfo, State,
     },
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use opentunnel_protocol::{
-    close,
+    messages::ErrorCode,
     frame::{read_frame, write_frame},
     messages::{AgentMsg, BrokerMsg},
     mux::{self, Mode},
@@ -145,26 +145,27 @@ pub async fn client_stream(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    // Errors are reported as close codes after the upgrade, so clients get one mechanism.
-    let session = bearer(&headers).map(|t| state.tokens.check_stream(t));
-    ws.max_message_size(MAX_WS_MESSAGE).max_frame_size(MAX_WS_MESSAGE).on_upgrade(move |mut socket| async move {
-        let session = match session {
-            Some(Ok(s)) => s,
-            _ => return close_with(&mut socket, close::UNAUTHORIZED, "invalid or expired stream token").await,
-        };
-        if !state.config.allowed(&session.user, &session.env, None) {
-            return close_with(&mut socket, close::FORBIDDEN, "not allowed").await;
+    // Everything that can fail is checked, and the agent stream opened, before the upgrade:
+    // clients see an HTTP status instead of a connection that opens and closes at once.
+    let session = match bearer(&headers).map(|t| state.tokens.check_stream(t)) {
+        Some(Ok(s)) => s,
+        _ => return refuse(ErrorCode::Unauthorized, "invalid or expired stream token"),
+    };
+    if !state.config.allowed(&session.user, &session.env, None) {
+        return refuse(ErrorCode::Forbidden, "not allowed");
+    }
+    let Some(agent) = state.registry.get(&session.env) else {
+        return refuse(ErrorCode::Offline, "environment offline");
+    };
+    let (mut upstream, guard) = match agent.open_stream(&session.commit, &session.id).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::info!(env = session.env, session = session.id, "stream refused: {}", e.message);
+            return refuse(e.code, &e.message);
         }
-        let Some(agent) = state.registry.get(&session.env) else {
-            return close_with(&mut socket, close::ENV_OFFLINE, "environment offline").await;
-        };
-        let (mut upstream, _guard) = match agent.open_stream(&session.commit, &session.id).await {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::info!(env = session.env, session = session.id, "stream refused: {}", e.message);
-                return close_with(&mut socket, e.code.close_code(), &e.message).await;
-            }
-        };
+    };
+    ws.max_message_size(MAX_WS_MESSAGE).max_frame_size(MAX_WS_MESSAGE).on_upgrade(move |socket| async move {
+        let _guard = guard;
         tracing::debug!(env = session.env, session = session.id, %peer, "client stream open");
         let ka = Duration::from_secs(state.config.server.keepalive_secs.max(1));
         let mut client = WsStream::new(socket).with_keepalive(ka, ka * 4);
@@ -177,11 +178,17 @@ pub async fn client_stream(
     })
 }
 
-async fn close_with(socket: &mut WebSocket, code: u16, reason: &str) {
-    // Close reasons are limited to 123 bytes.
-    let mut reason = reason.to_owned();
-    while reason.len() > 120 {
-        reason.pop();
-    }
-    let _ = socket.send(Message::Close(Some(CloseFrame { code, reason: reason.into() }))).await;
+/// HTTP refusal of a data-plane upgrade: status, plus the matching close code in
+/// `x-opentunnel-close-code` and a JSON body.
+fn refuse(code: ErrorCode, message: &str) -> Response {
+    let status = match code {
+        ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
+        ErrorCode::Forbidden => StatusCode::FORBIDDEN,
+        ErrorCode::Offline => StatusCode::SERVICE_UNAVAILABLE,
+        ErrorCode::VersionUnavailable => StatusCode::CONFLICT,
+        ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    let mut r = (status, axum::Json(serde_json::json!({ "error": code, "message": message }))).into_response();
+    r.headers_mut().insert("x-opentunnel-close-code", code.close_code().into());
+    r
 }

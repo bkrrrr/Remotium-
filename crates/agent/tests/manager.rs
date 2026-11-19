@@ -115,3 +115,40 @@ async fn reaps_unused_installs() {
     assert_eq!(mgr.reap_installs(), vec![COMMIT.to_string()]);
     assert!(!old.exists());
 }
+
+#[tokio::test]
+async fn adopts_server_after_agent_restart() {
+    if !python_available() {
+        return;
+    }
+    let files = tempfile::tempdir().unwrap();
+    let tgz = fake_reh_tarball(COMMIT);
+    let name = "vscodium-reh-linux-x64-1.143.17232.tar.gz";
+    std::fs::write(files.path().join(name), &tgz).unwrap();
+    std::fs::write(files.path().join(format!("{name}.sha256")), sha256_hex(&tgz)).unwrap();
+    let addr = serve_dir(files.path()).await;
+    let root = tempfile::tempdir().unwrap();
+
+    let first = ServerManager::new(config(root.path(), addr)).unwrap();
+    let token = first.ensure(&version(COMMIT)).await.unwrap();
+    let (mut a, _ga) = first.connect(COMMIT).await.unwrap();
+    let port = a.peer_addr().unwrap().port();
+    // The "agent" goes away without stopping its server.
+    drop(first);
+
+    let second = ServerManager::new(config(root.path(), addr)).unwrap();
+    // Data streams for a known commit work before any new ensure.
+    let (mut b, gb) = second.connect(COMMIT).await.unwrap();
+    assert_eq!(b.peer_addr().unwrap().port(), port, "same server process");
+    assert_eq!(second.ensure(&version(COMMIT)).await.unwrap(), token);
+    for s in [&mut a, &mut b] {
+        s.write_all(b"hi").await.unwrap();
+        let mut buf = [0u8; 2];
+        s.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"hi");
+    }
+    drop((a, b, gb, _ga));
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert_eq!(second.stop_idle().await, vec![COMMIT.to_string()]);
+    assert!(tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_err(), "server stopped");
+}

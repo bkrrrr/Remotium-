@@ -85,6 +85,7 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 		if (!forceNew && s.streamTokenExpiresAt - Date.now() > 10_000) {
 			return s;
 		}
+		this.log.info(`renewing stream token for session ${s.sessionId}`);
 		try {
 			const { broker, token } = await this.auth.accessToken(env);
 			const t = await new BrokerApi(broker).streamToken(token, s.sessionId);
@@ -105,6 +106,7 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 	private async connect(env: string): Promise<vscode.ManagedMessagePassing> {
 		const n = ++this.connectionCount;
 		const label = `${env}#${n}`;
+		this.log.info(`${label}: connecting`);
 		for (let attempt = 0; ; attempt++) {
 			const s = await this.streamCredentials(env, attempt > 0);
 			try {
@@ -115,11 +117,14 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 					onClosed: err => this.status?.closed(err),
 				});
 				this.status?.opened();
+				this.log.info(`${label}: connected`);
 				return mp;
 			} catch (e) {
 				const code = e instanceof WsConnectError ? e.closeCode : undefined;
+				const status = e instanceof WsConnectError ? e.status : undefined;
 				this.log.warn(`${label}: connect failed: ${(e as Error).message}`);
-				if (code === CLOSE.unauthorized && attempt === 0) {
+				// The broker refuses before the upgrade (HTTP status); close codes cover later failures.
+				if ((status === 401 || code === CLOSE.unauthorized) && attempt === 0) {
 					continue;
 				}
 				this.status?.set('reconnecting', (e as Error).message);

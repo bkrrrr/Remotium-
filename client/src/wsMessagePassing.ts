@@ -4,7 +4,9 @@ import WebSocket from 'ws';
 /** Above this many queued bytes, `drain()` waits. ManagedMessagePassing has no other backpressure signal. */
 const HIGH_WATER = 8 * 1024 * 1024;
 const LOW_WATER = 1 * 1024 * 1024;
-const PING_INTERVAL_MS = 25_000;
+const PING_INTERVAL_MS = 15_000;
+/** No pong for this long: the connection is dead even if TCP hasn't noticed (NAT, proxies). */
+const PONG_TIMEOUT_MS = 40_000;
 
 export interface WsConnectOptions {
 	headers?: Record<string, string>;
@@ -71,7 +73,20 @@ export function connectWs(url: string, opts: WsConnectOptions): Promise<vscode.M
 		ws.on('open', () => {
 			opened = true;
 			log.debug(`${label}: websocket open`);
-			pinger = setInterval(() => ws.readyState === WebSocket.OPEN && ws.ping(), PING_INTERVAL_MS);
+			let lastPong = Date.now();
+			ws.on('pong', () => (lastPong = Date.now()));
+			ws.on('message', () => (lastPong = Date.now()));
+			pinger = setInterval(() => {
+				if (ws.readyState !== WebSocket.OPEN) {
+					return;
+				}
+				if (Date.now() - lastPong > PONG_TIMEOUT_MS) {
+					log.warn(`${label}: no pong for ${PONG_TIMEOUT_MS / 1000} s, dropping the connection`);
+					ws.terminate();
+					return;
+				}
+				ws.ping();
+			}, PING_INTERVAL_MS);
 			resolve({
 				onDidReceiveMessage: onMessage.event,
 				onDidClose: onClose.event,
