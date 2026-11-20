@@ -21,8 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  server-tests:
-    name: Server · unit tests from source (${{ matrix.os }})
+  server-test:
+    name: server-test (debug, ${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -39,8 +39,8 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
-  client:
-    name: Client · unit tests + package VSIX
+  client-test-and-package:
+    name: client-test-and-package
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
@@ -72,9 +72,9 @@ jobs:
           path: client/remotium-client.vsix
 
   # The files a release publishes. End-to-end tests run against these.
-  server-build:
-    name: Server · release binary ${{ matrix.name }}
-    needs: client
+  server-build-production:
+    name: server-build-production (${{ matrix.name }})
+    needs: client-test-and-package
     strategy:
       matrix:
         include:
@@ -112,20 +112,20 @@ jobs:
         run: |
           cargo build --release --locked -p remotium-host --target ${{ matrix.target }}
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/remotium-host" "dist/remotium-host-${{ needs.client.outputs.version }}-${{ matrix.name }}"
+          cp "target/${{ matrix.target }}/release/remotium-host" "dist/remotium-host-${{ needs.client-test-and-package.outputs.version }}-${{ matrix.name }}"
       - name: Runs
         # The x86_64 macOS build is cross-compiled on an arm64 runner; skip running it.
         if: matrix.name != 'macos-x86_64'
-        run: '"dist/remotium-host-${{ needs.client.outputs.version }}-${{ matrix.name }}" --version'
+        run: '"dist/remotium-host-${{ needs.client-test-and-package.outputs.version }}-${{ matrix.name }}" --version'
       - uses: actions/upload-artifact@v7
         with:
           name: server - remotium-host ${{ matrix.name }}
           path: dist/
 
   # Real VSCodium (under Xvfb) and headless Chromium against the built remotium-host and VSIX.
-  e2e:
-    name: End-to-end on release files · VSCodium ${{ matrix.vscodium }}
-    needs: [client, server-build]
+  e2e-production:
+    name: e2e-production (VSCodium ${{ matrix.vscodium }})
+    needs: [client-test-and-package, server-build-production]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -197,14 +197,14 @@ jobs:
 
   # On main, publish the tested files when this version has no release yet.
   release:
-    name: Release v${{ needs.client.outputs.version }}
-    needs: [client, server-tests, server-build, e2e]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.client.outputs.unreleased == 'true'
+    name: release (v${{ needs.client-test-and-package.outputs.version }})
+    needs: [client-test-and-package, server-test, server-build-production, e2e-production]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.client-test-and-package.outputs.unreleased == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
-      V: ${{ needs.client.outputs.version }}
+      V: ${{ needs.client-test-and-package.outputs.version }}
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v7
