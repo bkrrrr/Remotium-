@@ -12,7 +12,7 @@
 use crate::reh::{self, RunningServer};
 use anyhow::{anyhow, bail, Context, Result};
 use futures::StreamExt;
-use remotium_protocol::messages::{ErrorCode, ServerVersion};
+use crate::types::{ErrorCode, ServerVersion};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
@@ -25,7 +25,8 @@ use std::{
 };
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
-pub const DEFAULT_URL_TEMPLATE: &str = "https://github.com/VSCodium/vscodium/releases/download/${version}${releaseSuffix}/vscodium-reh-${os}-${arch}-${version}${releaseSuffix}.tar.gz";
+/// The web variant of the VSCodium remote server: it serves desktop clients and the browser UI.
+pub const DEFAULT_URL_TEMPLATE: &str = "https://github.com/VSCodium/vscodium/releases/download/${version}${releaseSuffix}/vscodium-reh-web-${os}-${arch}-${version}${releaseSuffix}.tar.gz";
 
 #[derive(Clone, Debug)]
 pub struct ManagerConfig {
@@ -171,8 +172,19 @@ impl ServerManager {
     /// Open a TCP connection to the running server for `commit`, restarting it if it was
     /// stopped while idle.
     pub async fn connect(&self, commit: &str) -> Result<(TcpStream, ActiveGuard), EnsureError> {
+        let (port, _token, guard) = self.endpoint(commit).await?;
+        let tcp = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .map_err(|e| EnsureError::internal(anyhow!("connecting to server: {e}")))?;
+        tcp.set_nodelay(true).ok();
+        Ok((tcp, guard))
+    }
+
+    /// Port and connection token of the running server for `commit` (started or restarted if
+    /// needed). The guard keeps it counted as in use.
+    pub async fn endpoint(&self, commit: &str) -> Result<(u16, String, ActiveGuard), EnsureError> {
         let state = self.slot(commit);
-        let port = {
+        let (port, token) = {
             let mut slot = state.slot.lock().await;
             if slot.running.is_none() && slot.version.is_none() && slot.install.is_none() {
                 slot.install = self.find_install(commit);
@@ -183,14 +195,10 @@ impl ServerManager {
             }
             self.ensure_running(&mut slot, commit).await?;
             state.active.fetch_add(1, Ordering::SeqCst);
-            slot.running.as_ref().unwrap().port
+            let r = slot.running.as_ref().unwrap();
+            (r.port, r.connection_token.clone())
         };
-        let guard = ActiveGuard(state);
-        let tcp = TcpStream::connect(("127.0.0.1", port))
-            .await
-            .map_err(|e| EnsureError::internal(anyhow!("connecting to server: {e}")))?;
-        tcp.set_nodelay(true).ok();
-        Ok((tcp, guard))
+        Ok((port, token, ActiveGuard(state)))
     }
 
     /// Stop servers idle for longer than the configured timeout. Returns the stopped commits.
@@ -414,7 +422,7 @@ mod tests {
     fn template_without_release() {
         assert_eq!(
             expand_template(DEFAULT_URL_TEMPLATE, &v(None), "linux", "x64"),
-            "https://github.com/VSCodium/vscodium/releases/download/1.143.17232/vscodium-reh-linux-x64-1.143.17232.tar.gz"
+            "https://github.com/VSCodium/vscodium/releases/download/1.143.17232/vscodium-reh-web-linux-x64-1.143.17232.tar.gz"
         );
     }
 

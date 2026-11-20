@@ -1,8 +1,8 @@
 mod common;
 
 use common::*;
-use remotium_agent::manager::{ManagerConfig, ServerManager};
-use remotium_protocol::messages::{ErrorCode, ServerVersion};
+use remotium_host::manager::{ManagerConfig, ServerManager};
+use remotium_host::types::{ErrorCode, ServerVersion};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

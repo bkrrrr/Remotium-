@@ -57,7 +57,6 @@ impl WsMessage for tungstenite::Message {
     }
 }
 
-#[cfg(feature = "axum")]
 impl WsMessage for axum::extract::ws::Message {
     fn binary(data: Bytes) -> Self {
         axum::extract::ws::Message::Binary(data)
