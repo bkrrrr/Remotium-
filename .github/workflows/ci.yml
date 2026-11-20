@@ -8,6 +8,8 @@ on:
   schedule:
     - cron: "0 5 * * 1"
   workflow_dispatch:
+  # The release workflow runs the same checks before publishing anything.
+  workflow_call:
 
 permissions:
   contents: read
@@ -39,11 +41,83 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: npm ci
+      - run: npm run test:unit
       - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
           name: remotium-client-vsix
           path: client/remotium-client.vsix
+
+  # install.sh / install.ps1 on macOS and Windows, against a natively built server.
+  install-scripts:
+    needs: [client]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            vscodium: VSCodium-darwin-arm64
+          - os: windows-latest
+            vscodium: VSCodium-win32-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/download-artifact@v4
+        with:
+          name: remotium-client-vsix
+          path: ${{ runner.temp }}/vsix
+      - name: Build and start remotium-server
+        shell: bash
+        run: |
+          cargo build --locked -p remotium-server
+          vsix="$RUNNER_TEMP/vsix/remotium-client.vsix"
+          # A native Windows binary needs a Windows path, not Git Bash's /d/a/... form.
+          if command -v cygpath >/dev/null; then vsix=$(cygpath -m "$vsix"); fi
+          cat > "$RUNNER_TEMP/server.toml" <<EOF
+          [server]
+          listen = "127.0.0.1:8080"
+          public_url = "http://127.0.0.1:8080"
+          client_vsix = '$vsix'
+          [auth]
+          dev_identity = "dev@local"
+          [[env]]
+          id = "demo"
+          agent_token = "ci"
+          [[grant]]
+          users = ["dev@local"]
+          envs = ["demo"]
+          EOF
+          ./target/debug/remotium-server -c "$RUNNER_TEMP/server.toml" > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 30); do curl -fs http://127.0.0.1:8080/healthz && break; sleep 1; done
+      - name: Download VSCodium
+        shell: bash
+        run: |
+          v=$(jq -r '.pinned.version + (if .pinned.release then "." + .pinned.release else "" end)' compat.json)
+          curl -fsSL -o "$RUNNER_TEMP/vscodium.zip" "https://github.com/VSCodium/vscodium/releases/download/$v/${{ matrix.vscodium }}-$v.zip"
+          mkdir -p "$RUNNER_TEMP/vscodium" "$RUNNER_TEMP/portable"
+          cd "$RUNNER_TEMP/vscodium" && tar -xf "$RUNNER_TEMP/vscodium.zip"
+      - name: install.sh (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          export VSCODE_PORTABLE="$RUNNER_TEMP/portable"
+          export CODIUM="$RUNNER_TEMP/vscodium/VSCodium.app/Contents/Resources/app/bin/codium"
+          curl -fsSL http://127.0.0.1:8080/install.sh | sh
+          "$CODIUM" --list-extensions | grep -x remotium.client
+      - name: install.ps1 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:VSCODE_PORTABLE = "$env:RUNNER_TEMP\portable"
+          $env:CODIUM = "$env:RUNNER_TEMP\vscodium\bin\codium.cmd"
+          irm http://127.0.0.1:8080/install.ps1 | iex
+          $list = & $env:CODIUM --list-extensions
+          if (-not ($list -contains 'remotium.client')) { throw "remotium.client not installed: $list" }
+      - name: Server log
+        if: always()
+        shell: bash
+        run: cat "$RUNNER_TEMP/server.log" || true
 
   e2e:
     needs: [rust, client]
@@ -86,7 +160,7 @@ jobs:
       - name: Start server and devenv
         run: |
           docker compose -f deploy/docker-compose.yml up --build -d
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             curl -fs localhost:8080/api/v1/status | grep -q '"envsOnline":1' && break
             sleep 2
           done
@@ -95,12 +169,27 @@ jobs:
       - name: Install client dependencies
         run: npm --prefix client ci
 
+      - name: Install Xvfb
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgbm1 libnss3 libasound2t64 >/dev/null
+
+      - name: First install with the packaged client (served by the server)
+        env:
+          E2E_CODIUM_ARGS: --no-sandbox
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e"
+          xvfb-run -a npm --prefix client run test:e2e:vsix -- --work "$RUNNER_TEMP/e2e/first-install"
+
+      - name: install.sh from the server
+        run: |
+          export VSCODE_PORTABLE="$RUNNER_TEMP/portable" CODIUM="$RUNNER_TEMP/vscodium/bin/codium"
+          mkdir -p "$VSCODE_PORTABLE"
+          curl -fsSL localhost:8080/install.sh | sh
+          "$CODIUM" --list-extensions | grep -x remotium.client
+
       - name: Phase 3 suite in VSCodium (Xvfb)
         env:
           E2E_CODIUM_ARGS: --no-sandbox
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgbm1 libnss3 libasound2t64 >/dev/null
-          mkdir -p "$RUNNER_TEMP/e2e"
           xvfb-run -a npm --prefix client run test:phase3 -- --work "$RUNNER_TEMP/e2e"
 
       - name: Logs

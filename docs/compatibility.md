@@ -32,15 +32,20 @@ update VSCodium, the first connection downloads the new REH (about 90 MB), and
 ## Proposed API
 
 The extension needs the `resolvers` API proposal. VSCodium only enables proposals for
-allow-listed extensions, so users add this to `~/.vscode-oss/argv.json` (*Preferences:
-Configure Runtime Arguments*) and restart:
+allow-listed extensions or ones listed in `argv.json`:
 
 ```jsonc
 "enable-proposed-api": ["remotium.client"]
 ```
 
+Without it the extension still activates (only the proposed calls throw), so it offers to add
+that line itself and asks for a restart. It edits the file VSCodium reads,
+`~/.vscode-oss/argv.json` or `$VSCODE_PORTABLE/argv.json` in portable mode, with a
+comment-preserving JSONC edit. `env.remoteAuthority` also belongs to the proposal, so the
+extension uses `env.remoteName` and the workspace folder URI instead.
+
 VSCodium already allow-lists open-remote-ssh for `resolvers`; an upstream request to add
-`remotium.client` to its `product.json` would make this zero-config.
+`remotium.client` to its `product.json` would remove the restart.
 
 Proposed APIs can change between releases. The typings are pinned in
 `client/src/vscode.proposed.resolvers.d.ts` (from microsoft/vscode 1.143.1). The parts used
@@ -52,7 +57,7 @@ Re-check them on every VSCodium update; CI should run the pinned release and the
 
 ```sh
 docker compose -f deploy/docker-compose.yml up --build -d
-npm --prefix client run test:e2e      # sign in through a launch link, file system and terminal
+npm --prefix client run test:e2e:vsix # install the served VSIX, setup, restart, connect
 npm --prefix client run test:phase3   # + port forwarding, debugging, Open VSX, restarts
 ```
 

@@ -14,7 +14,7 @@ futures = "0.3.34"
 hex = "0.4.3"
 ipnet = { version = "2.12.2", features = ["serde"] }
 jsonwebtoken = { version = "12.0.0", default-features = false, features = ["rust_crypto"] }
-remotium-protocol = { version = "0.1.0", path = "../protocol", features = ["axum"] }
+remotium-protocol = { path = "../protocol", features = ["axum"] }
 rand = "0.10.4"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "json"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }

@@ -30,28 +30,38 @@ Docs: [architecture](docs/architecture.md) · [protocol](docs/protocol.md) ·
 Only VSCodium is supported. Microsoft VS Code needs Microsoft's server, whose license
 doesn't allow running it as a service. See [licensing](docs/licensing.md).
 
+## Installing Remotium Client
+
+Users install the client once per computer. Any of these works:
+
+| Way | How |
+|---|---|
+| From your server's dashboard | The dashboard shows a one-line command for the visitor's OS, e.g. `curl -fsSL https://<server>/install.sh \| sh` or `irm https://<server>/install.ps1 \| iex`. It downloads the client from that server, checks its SHA-256 and installs it with the `codium` CLI. A **download** link is there too: drag the file onto VSCodium's Extensions view. |
+| Open VSX (once published) | Search **Remotium** in VSCodium's Extensions view, or `codium --install-extension remotium.client`. |
+| GitHub Releases | Download `remotium-client-<version>.vsix` from the release page and drag it onto the Extensions view. |
+
+On first start, Remotium asks once to finish its setup: VSCodium has to allow its remote
+connection API (the `resolvers` proposal). Accept, then restart VSCodium. Under the hood this
+adds `"enable-proposed-api": ["remotium.client"]` to `~/.vscode-oss/argv.json`, keeping the
+rest of the file; you can also add that line yourself via *Preferences: Configure Runtime
+Arguments*.
+
+Microsoft VS Code can install the file but can't connect: it only accepts Microsoft's own
+server, which may not be offered as a service.
+
 ## Quick start (everything local)
 
-Requirements: Docker, VSCodium (the version pinned in [`compat.json`](compat.json) is
-pre-baked in the image; other versions are downloaded on first connect), Node.js 20+ to
-build the extension.
+Requirements: Docker and VSCodium (the version pinned in [`compat.json`](compat.json) is
+pre-baked in the image; other versions are downloaded on first connect).
 
 ```sh
 docker compose -f deploy/docker-compose.yml up --build -d
-npm --prefix client ci && npm --prefix client run package   # → client/remotium-client.vsix
 ```
 
-1. **Install the extension** in VSCodium: *Extensions → … → Install from VSIX…* and pick
-   `client/remotium-client.vsix`, or run
-   `codium --install-extension client/remotium-client.vsix`.
-2. **Allow its proposed API.** The extension uses the `resolvers` API proposal. Run
-   *Preferences: Configure Runtime Arguments*, which opens `~/.vscode-oss/argv.json`, add the
-   line below, and restart VSCodium:
-   ```jsonc
-   "enable-proposed-api": ["remotium.client"]
-   ```
-3. Open <http://localhost:8080>. The `demo` environment shows as online.
-4. Click **Open in VSCodium**. VSCodium asks once whether to trust the server, then opens a
+1. Open <http://localhost:8080>. The `demo` environment shows as online.
+2. Install the client using the command shown under **Get the client**, start VSCodium and
+   accept the one-time setup, then restart VSCodium.
+3. Click **Open in VSCodium**. VSCodium asks once whether to trust the server, then opens a
    remote window on `/workspace/demo` inside the container.
 
 Check that it works by editing `README.md` in that window, then running:
@@ -132,9 +142,18 @@ npm --prefix client run test:e2e
 ```
 
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the Rust tests and clippy,
-packages the VSIX, and runs the phase 3 suite in VSCodium under Xvfb against the compose
-stack, for the release pinned in `compat.json` and the latest VSCodium release (also weekly,
-to catch upstream changes early).
+the client unit tests, and packages the VSIX. Against the compose stack, in VSCodium under
+Xvfb (pinned and latest release, also weekly), it runs the first-install test with the VSIX
+the server serves, `install.sh`, and the phase 3 suite. `install.sh` and `install.ps1` are
+also tested on macOS and Windows.
+
+```sh
+npm --prefix client run test:unit       # argv.json handling
+npm --prefix client run test:e2e:vsix   # install the served VSIX, setup, restart, connect
+npm --prefix client run test:phase3     # terminals, ports, debugging, Open VSX, restarts
+```
+
+Releasing: see [docs/releasing.md](docs/releasing.md).
 
 Without a server, the M0 direct mode connects VSCodium straight to an agent. See
 [feasibility](docs/feasibility.md).

@@ -3,7 +3,8 @@
 //                           [--settings <json>] [--work <dir>] [--profile <dir>] [--keep-profile]
 //                           [--vsix <file|url>] [--no-proposed-flag] [--portable <dir>]
 // --profile reuses a user-data dir across runs.
-// --vsix installs that package (as users would) instead of loading the extension from source.
+// --vsix installs that package (file, URL, or a store id like remotium.client@0.2.0), as users
+// would, instead of loading the extension from source.
 // --no-proposed-flag leaves out --enable-proposed-api, so argv.json has to provide it.
 // --portable runs the editor in portable mode with that data dir. It then reads <dir>/argv.json
 // instead of ~/.vscode-oss/argv.json, so argv.json handling is tested without touching the real
@@ -83,6 +84,8 @@ function cliPath() {
 
 async function installVsix() {
 	let file = vsix;
+	// An extension id (e.g. remotium.client@0.2.0) installs from the gallery (Open VSX).
+	const fromStore = /^[a-z0-9-]+\.[a-z0-9-]+(@[\w.-]+)?$/i.test(vsix) && !fs.existsSync(vsix);
 	if (/^https?:\/\//.test(vsix)) {
 		const res = await fetch(vsix);
 		if (!res.ok) throw new Error(`download ${vsix}: HTTP ${res.status}`);
@@ -91,7 +94,7 @@ async function installVsix() {
 	}
 	const r = require('child_process').spawnSync(cliPath(), [
 		'--user-data-dir', userData, '--extensions-dir', path.join(profile, 'ext'),
-		'--install-extension', path.resolve(file), '--force',
+		'--install-extension', fromStore ? vsix : path.resolve(file), '--force',
 	], { env: childEnv, encoding: 'utf8', shell: process.platform === 'win32' });
 	console.log(`[install] ${(r.stdout || '').trim()} ${(r.stderr || '').trim()}`.trim());
 	if (r.status !== 0) throw new Error(`installing ${file} failed (exit ${r.status})`);

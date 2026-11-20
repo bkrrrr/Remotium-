@@ -47,6 +47,9 @@ VSIX and check the hash themselves.
 
 ## Client-side checks
 
+The one-time setup only ever adds `remotium.client` to `enable-proposed-api` in VSCodium's own
+`argv.json`, after the user confirms.
+
 The extension asks before using a server the first time (unless it equals the configured
 `remotium.serverUrl`) and warns about plain HTTP to non-loopback hosts. A link pointing
 at an unknown server can therefore not silently connect the editor somewhere else.
