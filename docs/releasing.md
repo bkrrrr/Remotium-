@@ -14,12 +14,12 @@ Everything is one workflow, `.github/workflows/ci.yml`:
    x86_64/aarch64), each with the client embedded.
 3. **End-to-end**: real VSCodium and Chromium against **those** files: the Linux binary and
    the VSIX that a release would publish.
-4. **Release** (pushes to `main` only): if there's no tag `v<version>` yet, it publishes the
-   tested files as GitHub Release `v<version>` (binaries, `remotium-client-<version>.vsix`,
-   `SHA256SUMS`). Otherwise it does nothing.
-5. **Release · client to Open VSX** (only after a release, and only with the `OVSX_PAT`
-   secret): publishes `remotium.client`, then installs it from Open VSX and connects to the
-   released server binary.
+4. **Release v&lt;version&gt;** (pushes to `main` only, and only if tag `v<version>` doesn't exist
+   yet; otherwise the job shows as skipped). Its steps:
+   - **Publish to GitHub Releases**: the tested binaries, `remotium-client-<version>.vsix`,
+     `SHA256SUMS`;
+   - **Publish client to Open VSX** and **Check the client from Open VSX installs and
+     connects** (both only with the `OVSX_PAT` secret, otherwise skipped).
 
 Nothing is built or tested twice, and ordinary pushes publish nothing.
 
