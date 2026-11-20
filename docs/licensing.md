@@ -2,7 +2,7 @@
 
 ## Why VSCodium only
 
-OpenTunnel is meant to be offered as a **hosted service**: a broker that many
+Remotium is meant to be offered as a **hosted service**: a Remotium Server that many
 users connect through, with dev containers that run a remote extension host
 (REH) for them.
 
@@ -26,8 +26,8 @@ for Microsoft products only and aren't supported.
 
 | Component | License | Notes |
 |-----------|---------|-------|
-| broker, agent, protocol crates | MIT | this repository |
-| client extension (`opentunnel.client`) | MIT | contains code adapted from open-remote-ssh (MIT) and a copy of the `resolvers` proposal typings from Code - OSS (MIT) |
+| server, agent, protocol crates | MIT | this repository |
+| client extension (`remotium.client`) | MIT | contains code adapted from open-remote-ssh (MIT) and a copy of the `resolvers` proposal typings from Code - OSS (MIT) |
 | VSCodium REH in the `devenv` image | MIT | downloaded unchanged from VSCodium releases; its `LICENSE.txt` and `ThirdPartyNotices.txt` stay in the server directory |
 
 See [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) for the attributions.

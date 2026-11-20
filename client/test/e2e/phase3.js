@@ -1,6 +1,6 @@
 // Phase 3 validation, run in the remote window: terminals, port forwarding, Node and Python
-// debugging, installing an Open VSX extension remotely, reconnecting after a broker restart
-// and after an agent restart. Restarts are done by the outer runner (run-broker.js), which
+// debugging, installing an Open VSX extension remotely, reconnecting after a server restart
+// and after an agent restart. Restarts are done by the outer runner (run-server.js), which
 // watches <controlDir>/request-<name> and answers with <controlDir>/done-<name>.
 const vscode = require('vscode');
 const fs = require('fs');
@@ -23,8 +23,8 @@ async function waitFor(pred, ms, what) {
 }
 
 async function request(name) {
-	const dir = vscode.workspace.getConfiguration('opentunnelE2e').get('controlDir');
-	if (!dir) throw new Error('opentunnelE2e.controlDir not set');
+	const dir = vscode.workspace.getConfiguration('remotiumE2e').get('controlDir');
+	if (!dir) throw new Error('remotiumE2e.controlDir not set');
 	fs.writeFileSync(path.join(dir, `request-${name}`), String(Date.now()));
 	await waitFor(() => fs.existsSync(path.join(dir, `done-${name}`)), 120000, `runner to ${name}`);
 }
@@ -56,7 +56,7 @@ async function hitsBreakpoint(folder, file, line, config, expr, expected) {
 
 exports.run = async function run() {
 	const result = { ok: false, steps: [], failed: [] };
-	const only = (vscode.workspace.getConfiguration('opentunnelE2e').get('only') || '').split(',').map(x => x.trim()).filter(Boolean);
+	const only = (vscode.workspace.getConfiguration('remotiumE2e').get('only') || '').split(',').map(x => x.trim()).filter(Boolean);
 	const step = async (name, fn) => {
 		if (only.length && !only.some(o => name.startsWith(o)) && name !== 'remote ready' && name !== 'terminal') return;
 		const t0 = Date.now();
@@ -126,7 +126,7 @@ exports.run = async function run() {
 		await terminalWrites(term, at('.phase3-term'), name);
 		return 'file system and existing terminal work, no reload';
 	};
-	await step('reconnect after broker restart', () => reconnects('restart-broker'));
+	await step('reconnect after server restart', () => reconnects('restart-server'));
 	await step('reconnect after agent restart', () => reconnects('restart-agent'));
 
 	for (const f of ['.phase3-term', '.phase3-reconnect', 'dbg.js', 'dbg.py']) {

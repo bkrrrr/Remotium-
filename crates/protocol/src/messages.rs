@@ -1,7 +1,7 @@
-//! Messages exchanged between agent and broker.
+//! Messages exchanged between agent and server.
 //!
 //! The agent opens yamux stream 1 as the **control stream** and sends [`AgentMsg::Hello`]
-//! first. Every other stream is opened by the broker and starts with a [`StreamHeader`],
+//! first. Every other stream is opened by the server and starts with a [`StreamHeader`],
 //! answered by a [`StreamReply`]; after that, raw bytes flow.
 
 use serde::{Deserialize, Serialize};
@@ -57,7 +57,7 @@ impl ErrorCode {
     }
 }
 
-/// Agent → broker, on the control stream.
+/// Agent → server, on the control stream.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum AgentMsg {
@@ -75,10 +75,10 @@ pub enum AgentMsg {
     Heartbeat,
 }
 
-/// Broker → agent, on the control stream.
+/// Server → agent, on the control stream.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum BrokerMsg {
+pub enum ServerMsg {
     Welcome { heartbeat_secs: u64 },
     EnsureServer { id: u64, server: ServerVersion },
     Heartbeat,
@@ -100,7 +100,7 @@ pub enum StreamKind {
     Tcp,
 }
 
-/// First frame on every broker-opened data stream.
+/// First frame on every server-opened data stream.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamHeader {

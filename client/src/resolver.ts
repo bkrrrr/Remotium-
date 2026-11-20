@@ -1,32 +1,32 @@
 import * as vscode from 'vscode';
 import { AuthStore } from './auth';
-import { BrokerApi, BrokerError, SessionInfo } from './brokerApi';
+import { ServerApi, ServerError, SessionInfo } from './serverApi';
 import { getProductInfo } from './productInfo';
 import { StatusItem } from './status';
 import { connectWs, WsConnectError } from './wsMessagePassing';
 
-export const AUTHORITY_PREFIX = 'opentunnel';
+export const AUTHORITY_PREFIX = 'remotium';
 export const DIRECT_ENV = 'direct';
 
-/** Close codes from the broker's data plane. */
+/** Close codes from the server's data plane. */
 const CLOSE = { unauthorized: 4401, forbidden: 4403, offline: 4404, versionUnavailable: 4409, internal: 4500 };
 
-/** `opentunnel+<env>` → `<env>` */
+/** `remotium+<env>` → `<env>` */
 export function envFromAuthority(authority: string): string {
 	const plus = authority.indexOf('+');
 	if (plus < 0 || authority.slice(0, plus) !== AUTHORITY_PREFIX) {
-		throw new Error(`not an OpenTunnel authority: ${authority}`);
+		throw new Error(`not an Remotium authority: ${authority}`);
 	}
 	return decodeURIComponent(authority.slice(plus + 1));
 }
 
 interface ActiveSession extends SessionInfo {
 	env: string;
-	broker: string;
+	server: string;
 	streamTokenExpiresAt: number;
 }
 
-export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
+export class RemotiumResolver implements vscode.RemoteAuthorityResolver {
 	private connectionCount = 0;
 	private session: ActiveSession | undefined;
 	status: StatusItem | undefined;
@@ -47,7 +47,7 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 		this.status.set('resolving');
 		try {
 			const s = await this.createSession(env);
-			this.log.info(`session ${s.sessionId} on ${s.broker}`);
+			this.log.info(`session ${s.sessionId} on ${s.server}`);
 			return new vscode.ManagedResolvedAuthority(() => this.connect(env), s.connectionToken);
 		} catch (e) {
 			this.status.set('error', (e as Error).message);
@@ -59,15 +59,15 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 		const product = getProductInfo();
 		const version = { commit: product.commit, quality: product.quality, version: product.version, release: product.release };
 		const attempt = async (force: boolean) => {
-			const { broker, token } = await this.auth.accessToken(env, force);
-			const info = await new BrokerApi(broker).createSession(token, env, version);
-			return { ...info, env, broker, streamTokenExpiresAt: Date.now() + info.streamTokenExpiresIn * 1000 };
+			const { server, token } = await this.auth.accessToken(env, force);
+			const info = await new ServerApi(server).createSession(token, env, version);
+			return { ...info, env, server, streamTokenExpiresAt: Date.now() + info.streamTokenExpiresIn * 1000 };
 		};
 		let s: ActiveSession;
 		try {
 			s = await attempt(false);
 		} catch (e) {
-			if (!(e instanceof BrokerError) || e.status !== 401 || e.code === 'signed_out') {
+			if (!(e instanceof ServerError) || e.status !== 401 || e.code === 'signed_out') {
 				throw e;
 			}
 			s = await attempt(true);
@@ -87,14 +87,14 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 		}
 		this.log.info(`renewing stream token for session ${s.sessionId}`);
 		try {
-			const { broker, token } = await this.auth.accessToken(env);
-			const t = await new BrokerApi(broker).streamToken(token, s.sessionId);
+			const { server, token } = await this.auth.accessToken(env);
+			const t = await new ServerApi(server).streamToken(token, s.sessionId);
 			s = { ...s, streamToken: t.streamToken, streamTokenExpiresAt: Date.now() + t.expiresIn * 1000 };
 			this.session = s;
 			return s;
 		} catch (e) {
-			// The broker forgot the session (e.g. it restarted): start a new one.
-			if (e instanceof BrokerError && (e.status === 404 || e.status === 401) && e.code !== 'signed_out') {
+			// The server forgot the session (e.g. it restarted): start a new one.
+			if (e instanceof ServerError && (e.status === 404 || e.status === 401) && e.code !== 'signed_out') {
 				this.log.info(`session ${s.sessionId} is gone; creating a new one`);
 				return this.createSession(env);
 			}
@@ -123,7 +123,7 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 				const code = e instanceof WsConnectError ? e.closeCode : undefined;
 				const status = e instanceof WsConnectError ? e.status : undefined;
 				this.log.warn(`${label}: connect failed: ${(e as Error).message}`);
-				// The broker refuses before the upgrade (HTTP status); close codes cover later failures.
+				// The server refuses before the upgrade (HTTP status); close codes cover later failures.
 				if ((status === 401 || code === CLOSE.unauthorized) && attempt === 0) {
 					continue;
 				}
@@ -140,8 +140,8 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 		}
 		this.session = undefined;
 		try {
-			const { broker, token } = await this.auth.accessToken(s.env);
-			await new BrokerApi(broker).revokeSession(token, s.sessionId);
+			const { server, token } = await this.auth.accessToken(s.env);
+			await new ServerApi(server).revokeSession(token, s.sessionId);
 		} catch (e) {
 			this.log.warn(`revoking session failed: ${(e as Error).message}`);
 		}
@@ -149,10 +149,10 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 
 	/** M0 spike: connect straight to an agent in --direct-listen mode. */
 	private resolveDirect(): vscode.ResolverResult {
-		const cfg = vscode.workspace.getConfiguration('opentunnel');
+		const cfg = vscode.workspace.getConfiguration('remotium');
 		const url = cfg.get<string>('directUrl');
 		if (!url) {
-			throw vscode.RemoteAuthorityResolverError.NotAvailable('Set opentunnel.directUrl to use the direct connection.', false);
+			throw vscode.RemoteAuthorityResolverError.NotAvailable('Set remotium.directUrl to use the direct connection.', false);
 		}
 		const token = cfg.get<string>('directConnectionToken') || undefined;
 		return new vscode.ManagedResolvedAuthority(() => {
@@ -163,7 +163,7 @@ export class OpenTunnelResolver implements vscode.RemoteAuthorityResolver {
 }
 
 function toResolverError(e: unknown): Error {
-	if (e instanceof BrokerError) {
+	if (e instanceof ServerError) {
 		switch (e.code) {
 			case 'network':
 			case 'offline':
@@ -172,7 +172,7 @@ function toResolverError(e: unknown): Error {
 				return vscode.RemoteAuthorityResolverError.NotAvailable(`No matching server for this VSCodium version: ${e.message}`, false);
 		}
 		if (e.isAuthFailure) {
-			return vscode.RemoteAuthorityResolverError.NotAvailable(`${e.message} Open the environment again from the OpenTunnel dashboard.`, false);
+			return vscode.RemoteAuthorityResolverError.NotAvailable(`${e.message} Open the environment again from the Remotium dashboard.`, false);
 		}
 		return vscode.RemoteAuthorityResolverError.NotAvailable(e.message, false);
 	}

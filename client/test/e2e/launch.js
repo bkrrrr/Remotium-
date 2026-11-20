@@ -2,7 +2,7 @@
 //   node test/e2e/launch.js [--codium <VSCodium executable>] [--folder-uri <uri>] [--tests smoke.js]
 //                           [--settings <json>] [--work <dir>] [--profile <dir>] [--keep-profile]
 // --profile reuses a user-data dir across runs.
-// --launch-link <uri> runs the broker flow instead of a test file: the helper extension opens
+// --launch-link <uri> runs the server flow instead of a test file: the helper extension opens
 // the link in a local window, then runs smoke.js in the remote window that opens.
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -19,7 +19,7 @@ const defaultCodium = process.platform === 'darwin'
 	: 'codium';
 const codium = arg('codium', process.env.VSCODIUM_PATH || defaultCodium);
 const folderUri = arg('folder-uri');
-const work = arg('work') || fs.mkdtempSync(path.join(os.tmpdir(), 'opentunnel-e2e-'));
+const work = arg('work') || fs.mkdtempSync(path.join(os.tmpdir(), 'remotium-e2e-'));
 fs.mkdirSync(work, { recursive: true });
 const settings = JSON.parse(arg('settings', '{}'));
 const timeoutMs = Number(arg('timeout', '180000'));
@@ -38,13 +38,16 @@ fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify({
 	'extensions.autoUpdate': false,
 	'update.mode': 'none',
 	'telemetry.telemetryLevel': 'off',
+	// Publishers allowed by this policy count as trusted, so installing an extension (the
+	// phase 3 suite installs ms-python.debugpy) never shows the publisher trust dialog.
+	'extensions.allowed': { '*': true },
 	...settings,
 	...(launchLink ? {
-		'opentunnelE2e.launchLink': launchLink,
-		'opentunnelE2e.resultFile': path.join(work, 'result.json'),
-		'opentunnelE2e.suite': arg('suite', 'smoke'),
-		'opentunnelE2e.controlDir': work,
-		'opentunnelE2e.only': arg('only', ''),
+		'remotiumE2e.launchLink': launchLink,
+		'remotiumE2e.resultFile': path.join(work, 'result.json'),
+		'remotiumE2e.suite': arg('suite', 'smoke'),
+		'remotiumE2e.controlDir': work,
+		'remotiumE2e.only': arg('only', ''),
 	} : {}),
 }, null, 2));
 const resultFile = path.join(work, 'result.json');
@@ -61,7 +64,7 @@ const args = [
 	...(launchLink
 		? ['--extensionDevelopmentPath', path.join(__dirname, 'helper')]
 		: ['--extensionTestsPath', tests]),
-	'--enable-proposed-api', 'opentunnel.client',
+	'--enable-proposed-api', 'remotium.client',
 	'--disable-workspace-trust',
 	'--skip-welcome', '--skip-release-notes', '--disable-gpu',
 	...(folderUri ? ['--folder-uri', folderUri] : []),
@@ -79,7 +82,7 @@ const logFile = fs.createWriteStream(path.join(work, 'codium.log'));
 child.stdout.pipe(logFile);
 child.stderr.pipe(logFile);
 child.stdout.on('data', d => { const s = d.toString(); if (/\[(smoke|phase3)\]/.test(s)) process.stdout.write(s); });
-// Requests from the in-window suite (e.g. restart the broker), answered by --on-request.
+// Requests from the in-window suite (e.g. restart the server), answered by --on-request.
 const onRequest = arg('on-request');
 const handled = new Set();
 const control = onRequest && setInterval(() => {

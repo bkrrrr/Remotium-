@@ -3,7 +3,7 @@
 set -eu
 compose="docker compose -f $(dirname "$0")/../../../deploy/docker-compose.yml"
 case "$1" in
-  restart-broker) $compose restart broker ;;
-  restart-agent)  $compose exec -T devenv pkill -f /usr/local/bin/opentunnel-agent ;;
+  restart-server) $compose restart server ;;
+  restart-agent)  $compose exec -T devenv pkill -f /usr/local/bin/remotium-agent ;;
   *) echo "unknown action $1" >&2; exit 2 ;;
 esac

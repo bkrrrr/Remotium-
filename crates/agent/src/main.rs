@@ -1,6 +1,6 @@
-//! OpenTunnel agent: runs inside a dev container, dials the broker and serves VSCodium REHs.
+//! Remotium agent: runs inside a dev container, dials the server and serves VSCodium REHs.
 
-use opentunnel_agent::{direct, link, manager, platform, reh};
+use remotium_agent::{direct, link, manager, platform, reh};
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
@@ -9,11 +9,11 @@ use std::{net::SocketAddr, path::PathBuf, time::Duration};
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Args {
-    /// Broker base URL, e.g. https://tunnels.example.com or http://broker:8080.
-    #[arg(long, env = "BROKER_URL")]
-    broker_url: Option<String>,
+    /// Remotium Server base URL, e.g. https://tunnels.example.com or http://server:8080.
+    #[arg(long, env = "REMOTIUM_SERVER_URL")]
+    server_url: Option<String>,
 
-    /// Agent token issued for this environment in the broker config.
+    /// Agent token issued for this environment in the server config.
     #[arg(long, env = "AGENT_TOKEN", hide_env_values = true)]
     agent_token: Option<String>,
 
@@ -21,7 +21,7 @@ struct Args {
     #[arg(long, env = "AGENT_TOKEN_FILE")]
     agent_token_file: Option<PathBuf>,
 
-    /// Environment id, as configured in the broker.
+    /// Environment id, as configured in the server.
     #[arg(long, env = "AGENT_ENV_ID")]
     env_id: Option<String>,
 
@@ -36,41 +36,41 @@ struct Args {
     #[arg(long, env = "AGENT_WORKSPACE_ROOT", default_value = "/workspace")]
     workspace_root: PathBuf,
 
-    /// State directory: server cache, tokens, server data (extensions, settings).
+    /// State directory: REH cache, tokens, REH data (extensions, settings).
     #[arg(long, env = "AGENT_DATA_DIR", default_value = "/data")]
     data_dir: PathBuf,
 
-    /// Server download URL template.
-    #[arg(long, env = "AGENT_SERVER_URL_TEMPLATE", default_value = manager::DEFAULT_URL_TEMPLATE)]
-    server_url_template: String,
+    /// REH download URL template.
+    #[arg(long, env = "AGENT_REH_URL_TEMPLATE", default_value = manager::DEFAULT_URL_TEMPLATE)]
+    reh_url_template: String,
 
-    /// Read-only directories with pre-installed servers laid out as <dir>/<commit> (colon separated).
-    #[arg(long, env = "AGENT_SERVER_SEARCH_PATH", value_delimiter = ':')]
-    server_search_path: Vec<PathBuf>,
+    /// Read-only directories with pre-installed REHs laid out as <dir>/<commit> (colon separated).
+    #[arg(long, env = "AGENT_REH_SEARCH_PATH", value_delimiter = ':')]
+    reh_search_path: Vec<PathBuf>,
 
-    /// Accept server downloads without a published .sha256 file.
+    /// Accept REH downloads without a published .sha256 file.
     #[arg(long, env = "AGENT_ALLOW_UNVERIFIED_DOWNLOADS")]
     allow_unverified_downloads: bool,
 
-    /// Stop a server after this many seconds without connections.
+    /// Stop an REH after this many seconds without connections.
     #[arg(long, env = "AGENT_IDLE_TIMEOUT_SECS", default_value_t = 1800)]
     idle_timeout_secs: u64,
 
-    /// Delete downloaded servers unused for this many days.
+    /// Delete downloaded REHs unused for this many days.
     #[arg(long, env = "AGENT_REAP_AFTER_DAYS", default_value_t = 14)]
     reap_after_days: u64,
 
-    /// WebSocket ping interval towards the broker.
+    /// WebSocket ping interval towards the server.
     #[arg(long, env = "AGENT_KEEPALIVE_SECS", default_value_t = 25)]
     keepalive_secs: u64,
 
-    /// M0 spike: serve a plain WebSocket on this address that pipes to the REH in --server-dir.
+    /// M0 spike: serve a plain WebSocket on this address that pipes to the REH in --reh-dir.
     #[arg(long, env = "AGENT_DIRECT_LISTEN")]
     direct_listen: Option<SocketAddr>,
 
     /// Directory of an extracted VSCodium REH, for direct mode.
-    #[arg(long, env = "AGENT_SERVER_DIR")]
-    server_dir: Option<PathBuf>,
+    #[arg(long, env = "AGENT_REH_DIR")]
+    reh_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -78,11 +78,11 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
-    opentunnel_agent::install_crypto_provider();
+    remotium_agent::install_crypto_provider();
     let args = Args::parse();
 
     if let Some(listen) = args.direct_listen {
-        let Some(dir) = args.server_dir else { bail!("--direct-listen needs --server-dir") };
+        let Some(dir) = args.reh_dir else { bail!("--direct-listen needs --reh-dir") };
         let state = args.data_dir.join("direct");
         let extra = ["--server-data-dir".to_owned(), state.join("server-data").display().to_string()];
         let server = reh::start(&dir, &state, &extra).await?;
@@ -96,7 +96,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let broker_url = args.broker_url.context("--broker-url (BROKER_URL) is required")?;
+    let server_url = args.server_url.context("--server-url (REMOTIUM_SERVER_URL) is required")?;
     let env_id = args.env_id.context("--env-id (AGENT_ENV_ID) is required")?;
     let agent_token = match (args.agent_token, args.agent_token_file) {
         (Some(t), _) => t,
@@ -109,8 +109,8 @@ async fn main() -> Result<()> {
     let mgr = manager::ServerManager::new(manager::ManagerConfig {
         cache_dir: args.data_dir.join("servers"),
         state_dir: args.data_dir.join("state"),
-        search_dirs: args.server_search_path,
-        url_template: args.server_url_template,
+        search_dirs: args.reh_search_path,
+        url_template: args.reh_url_template,
         require_checksum: !args.allow_unverified_downloads,
         idle_timeout: Duration::from_secs(args.idle_timeout_secs),
         reap_after: Duration::from_secs(args.reap_after_days * 86_400),
@@ -136,7 +136,7 @@ async fn main() -> Result<()> {
 
     tracing::info!(env = env_id, agent = agent_id, ?projects, "starting agent");
     let link_cfg = link::LinkConfig {
-        broker_url,
+        server_url,
         agent_token,
         agent_id,
         env_id,

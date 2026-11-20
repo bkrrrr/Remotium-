@@ -1,4 +1,4 @@
-# A dev container: toolchains, the OpenTunnel agent and a pre-baked VSCodium REH.
+# A dev container: toolchains, the Remotium agent and a pre-baked VSCodium REH.
 # Other VSCodium versions are downloaded on demand into the /data volume.
 
 FROM rust:1-bookworm AS agent
@@ -7,8 +7,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked -p opentunnel-agent \
- && install -Dm755 target/release/opentunnel-agent /out/opentunnel-agent
+    cargo build --release --locked -p remotium-agent \
+ && install -Dm755 target/release/remotium-agent /out/remotium-agent
 
 FROM debian:trixie-slim
 ARG VSCODIUM_VERSION=1.143.17232
@@ -33,9 +33,9 @@ RUN set -eu; \
     rm /tmp/reh.tgz; \
     echo "pre-baked VSCodium REH $v ($commit)"
 
-COPY --from=agent /out/opentunnel-agent /usr/local/bin/opentunnel-agent
+COPY --from=agent /out/remotium-agent /usr/local/bin/remotium-agent
 COPY deploy/devenv/entrypoint.sh /usr/local/bin/devenv-entrypoint
-COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/opentunnel/
+COPY LICENSE THIRD_PARTY_NOTICES.md /usr/share/doc/remotium/
 COPY deploy/devenv/workspace /workspace
 
 RUN useradd -m -u 1000 -s /bin/bash dev \
@@ -45,6 +45,6 @@ USER dev
 WORKDIR /workspace
 ENV AGENT_DATA_DIR=/data \
     AGENT_WORKSPACE_ROOT=/workspace \
-    AGENT_SERVER_SEARCH_PATH=/opt/vscodium-server
+    AGENT_REH_SEARCH_PATH=/opt/vscodium-server
 VOLUME ["/data"]
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/devenv-entrypoint"]

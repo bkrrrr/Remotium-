@@ -1,4 +1,4 @@
-//! Broker configuration (`broker.toml`).
+//! Server configuration (`server.toml`).
 
 use anyhow::{bail, Context, Result};
 use ipnet::IpNet;
@@ -26,7 +26,7 @@ pub struct ServerConfig {
     /// Optional separate listener for the data plane (`/data/*`, `/agent/*`). When set,
     /// `listen` serves only the dashboard and control API.
     pub data_listen: Option<SocketAddr>,
-    /// The URL clients use to reach this broker, e.g. `https://tunnels.example.com`.
+    /// The URL clients use to reach this server, e.g. `https://tunnels.example.com`.
     pub public_url: String,
     /// Public URL of the data plane if it differs from `public_url`.
     pub public_data_url: Option<String>,
@@ -39,6 +39,12 @@ pub struct ServerConfig {
     /// URI scheme of the editor the dashboard links to.
     #[serde(default = "default_scheme")]
     pub editor_scheme: String,
+    /// The client package offered at `/downloads/remotium-client.vsix`. Defaults to the
+    /// file baked into the server image, if present.
+    pub client_vsix: Option<PathBuf>,
+    /// Set once the client is published on Open VSX: the dashboard then links to the store.
+    #[serde(default)]
+    pub client_on_open_vsx: bool,
 }
 
 fn default_keepalive() -> u64 {
@@ -102,7 +108,7 @@ pub struct EnvConfig {
     pub id: String,
     #[serde(default)]
     pub name: Option<String>,
-    /// SHA-256 (hex) of the agent token. Generate with `opentunnel-broker hash-token`.
+    /// SHA-256 (hex) of the agent token. Generate with `remotium-server hash-token`.
     pub agent_token_sha256: Option<String>,
     /// Plain agent token, for local development only.
     pub agent_token: Option<String>,

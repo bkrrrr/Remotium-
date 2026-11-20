@@ -60,7 +60,7 @@ async fn refused_status(stack: &Stack, token: &str) -> u16 {
 async fn stream_refusals_happen_before_upgrade() {
     need_python!();
     let mut stack = Stack::start().await;
-    assert_eq!(refused_status(&stack, "ots_bogus").await, 401);
+    assert_eq!(refused_status(&stack, "rms_bogus").await, 401);
     let (_at, sess) = stack.session().await;
     let st = sess["streamToken"].as_str().unwrap().to_owned();
     stack.stop_agent();

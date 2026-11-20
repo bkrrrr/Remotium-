@@ -22,11 +22,11 @@ https://github.com/VSCodium/vscodium/releases/download/${version}${releaseSuffix
 Since 1.9x, VSCodium has no separate `release` field and the version (`1.143.17232`) is the
 tag. Older releases append `.${release}`; `${releaseSuffix}` is `.<release>` or empty, and
 open-remote-ssh's `${version}.${release}` form is also understood. Set
-`AGENT_SERVER_URL_TEMPLATE` for a mirror. Each installed commit takes about 280 MB in
+`AGENT_REH_URL_TEMPLATE` for a mirror. Each installed commit takes about 280 MB in
 `/data/servers`.
 
 The devenv image pre-bakes the pinned release in `/opt/vscodium-server/<commit>`. When you
-update VSCodium, the first connection downloads the new server (about 90 MB), and
+update VSCodium, the first connection downloads the new REH (about 90 MB), and
 `POST /api/v1/sessions` waits for it.
 
 ## Proposed API
@@ -36,11 +36,11 @@ allow-listed extensions, so users add this to `~/.vscode-oss/argv.json` (*Prefer
 Configure Runtime Arguments*) and restart:
 
 ```jsonc
-"enable-proposed-api": ["opentunnel.client"]
+"enable-proposed-api": ["remotium.client"]
 ```
 
 VSCodium already allow-lists open-remote-ssh for `resolvers`; an upstream request to add
-`opentunnel.client` to its `product.json` would make this zero-config.
+`remotium.client` to its `product.json` would make this zero-config.
 
 Proposed APIs can change between releases. The typings are pinned in
 `client/src/vscode.proposed.resolvers.d.ts` (from microsoft/vscode 1.143.1). The parts used

@@ -1,15 +1,15 @@
-//! OpenTunnel broker binary.
+//! Remotium server binary.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use opentunnel_broker::{app, config::Config, control_router, data_router, serve, spawn_gc, AppState};
+use remotium_server::{app, config::Config, control_router, data_router, serve, spawn_gc, AppState};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(version, about)]
 struct Args {
-    #[arg(long, short, env = "BROKER_CONFIG", default_value = "broker.toml")]
+    #[arg(long, short, env = "REMOTIUM_SERVER_CONFIG", default_value = "server.toml")]
     config: PathBuf,
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -17,11 +17,11 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Run the broker (default).
+    /// Run the server (default).
     Serve,
     /// Check the config file and exit.
     CheckConfig,
-    /// Generate a new agent token and print it with its SHA-256 for broker.toml.
+    /// Generate a new agent token and print it with its SHA-256 for server.toml.
     GenToken,
     /// Print the SHA-256 of an agent token for `agent_token_sha256`.
     HashToken { token: String },
@@ -34,11 +34,11 @@ async fn main() -> Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,tower_http=info".into()),
         )
         .init();
-    opentunnel_broker::install_crypto_provider();
+    remotium_server::install_crypto_provider();
     let args = Args::parse();
     match args.cmd.unwrap_or(Cmd::Serve) {
         Cmd::GenToken => {
-            let t = opentunnel_broker::tokens::random_secret("otag_");
+            let t = remotium_server::tokens::random_secret("rmag_");
             println!("agent token:        {t}\nagent_token_sha256: {}", hex::encode(Sha256::digest(t.as_bytes())));
             Ok(())
         }

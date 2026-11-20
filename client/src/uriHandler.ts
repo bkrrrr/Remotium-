@@ -3,7 +3,7 @@ import { AuthStore } from './auth';
 import { AUTHORITY_PREFIX } from './resolver';
 
 /**
- * Handles `<scheme>://opentunnel.client/connect?ticket=…&env=…&path=…&broker=…` from the
+ * Handles `<scheme>://remotium.client/connect?ticket=…&env=…&path=…&server=…` from the
  * dashboard: trades the one-time ticket for tokens and opens the remote folder.
  */
 export class LaunchUriHandler implements vscode.UriHandler {
@@ -23,38 +23,38 @@ export class LaunchUriHandler implements vscode.UriHandler {
 		const ticket = q.get('ticket');
 		const env = q.get('env');
 		const path = q.get('path') || '/';
-		const broker = q.get('broker') || vscode.workspace.getConfiguration('opentunnel').get<string>('brokerUrl');
-		if (!ticket || !env || !broker) {
-			void vscode.window.showErrorMessage('OpenTunnel: the launch link is incomplete.');
+		const server = q.get('server') || vscode.workspace.getConfiguration('remotium').get<string>('serverUrl');
+		if (!ticket || !env || !server) {
+			void vscode.window.showErrorMessage('Remotium: the launch link is incomplete.');
 			return false;
 		}
-		if (!/^https?:\/\//.test(broker) || !/^[A-Za-z0-9_-]{1,64}$/.test(env) || !path.startsWith('/')) {
-			void vscode.window.showErrorMessage('OpenTunnel: the launch link is malformed.');
+		if (!/^https?:\/\//.test(server) || !/^[A-Za-z0-9_-]{1,64}$/.test(env) || !path.startsWith('/')) {
+			void vscode.window.showErrorMessage('Remotium: the launch link is malformed.');
 			return false;
 		}
-		if (!this.auth.isTrustedBroker(broker)) {
-			const insecure = broker.startsWith('http://') && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(broker);
+		if (!this.auth.isTrustedServer(server)) {
+			const insecure = server.startsWith('http://') && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(server);
 			const choice = await vscode.window.showWarningMessage(
-				`Connect to the OpenTunnel broker at ${broker}?`,
+				`Connect to the Remotium server at ${server}?`,
 				{
 					modal: true,
-					detail: `The broker will get a remote window into environment "${env}". Only continue if you opened this link from your own OpenTunnel dashboard.${insecure ? '\n\nThis broker uses plain HTTP, so traffic is not encrypted.' : ''}`,
+					detail: `The server will get a remote window into environment "${env}". Only continue if you opened this link from your own Remotium dashboard.${insecure ? '\n\nThis server uses plain HTTP, so traffic is not encrypted.' : ''}`,
 				},
 				'Connect',
 			);
 			if (choice !== 'Connect') {
 				return false;
 			}
-			await this.auth.trustBroker(broker);
+			await this.auth.trustServer(server);
 		}
 		try {
 			await vscode.window.withProgress(
-				{ location: vscode.ProgressLocation.Notification, title: `OpenTunnel: signing in to ${env}…` },
-				() => this.auth.signIn(broker, ticket),
+				{ location: vscode.ProgressLocation.Notification, title: `Remotium: signing in to ${env}…` },
+				() => this.auth.signIn(server, ticket),
 			);
 		} catch (e) {
 			this.log.error(`sign-in failed: ${(e as Error).message}`);
-			void vscode.window.showErrorMessage(`OpenTunnel: sign-in failed: ${(e as Error).message}. Launch links work once and expire after 60 seconds; open it again from the dashboard.`);
+			void vscode.window.showErrorMessage(`Remotium: sign-in failed: ${(e as Error).message}. Launch links work once and expire after 60 seconds; open it again from the dashboard.`);
 			return false;
 		}
 		if (!openFolder) {

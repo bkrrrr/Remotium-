@@ -4,4 +4,4 @@ client/out
 client/.vscode-test
 .git
 *.vsix
-deploy/broker.toml
+deploy/server.toml

@@ -1,4 +1,4 @@
-// Runs inside the local extension host of a remote window opened on an OpenTunnel authority.
+// Runs inside the local extension host of a remote window opened on an Remotium authority.
 // Checks that the remote file system and terminals work, then writes a JSON result file.
 const vscode = require('vscode');
 const fs = require('fs');
@@ -28,7 +28,7 @@ exports.run = async function run() {
 		step(`remote file system ready after ${Date.now() - t0} ms`);
 
 		const readme = vscode.Uri.joinPath(folder.uri, 'README.md');
-		const marker = `edited over opentunnel ${Date.now()}`;
+		const marker = `edited over remotium ${Date.now()}`;
 		await vscode.workspace.fs.writeFile(readme, Buffer.from(`# demo\n\n${marker}\n`));
 		const back = Buffer.from(await vscode.workspace.fs.readFile(readme)).toString();
 		if (!back.includes(marker)) throw new Error('read-back mismatch');

@@ -50,7 +50,7 @@ fn page(title: &str, body: &str) -> Html<String> {
 pub async fn index(State(state): State<Arc<AppState>>, ProxyUser(user): ProxyUser) -> Response {
     let envs = visible_envs(&state, &user);
     let mut body = format!(
-        "<header><h1>OpenTunnel</h1><span class=\"muted\">Signed in as {}</span></header>",
+        "<header><h1>Remotium</h1><span class=\"muted\">Signed in as {}</span></header>",
         esc(&user)
     );
     if envs.is_empty() {
@@ -88,21 +88,37 @@ pub async fn index(State(state): State<Arc<AppState>>, ProxyUser(user): ProxyUse
         }
         body.push_str("</ul></section>");
     }
-    body.push_str(SETUP_HELP);
-    let mut r = page("OpenTunnel", &body).into_response();
+    body.push_str(&setup_help(&state));
+    let mut r = page("Remotium", &body).into_response();
     r.headers_mut().insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
     r
 }
 
-const SETUP_HELP: &str = r#"<details><summary>First-time setup in VSCodium</summary>
+/// "Get the client" help. Open by default until the visitor has launched something.
+fn setup_help(state: &AppState) -> String {
+    let install = if state.config.server.client_on_open_vsx {
+        "<li><a class=\"btn\" href=\"vscodium:extension/remotium.client\">Install Remotium Client</a> \
+         <span class=\"muted\">(opens VSCodium; or search <b>Remotium</b> in its Extensions view)</span></li>"
+            .to_owned()
+    } else if state.client.is_some() {
+        "<li><a class=\"btn\" href=\"downloads/remotium-client.vsix\" download>Download Remotium Client</a>, \
+         then drag the file onto VSCodium's Extensions view (or <b>Extensions: Install from VSIX…</b>).</li>"
+            .to_owned()
+    } else {
+        "<li>Install <b>Remotium Client</b> (<code>remotium.client</code>) in VSCodium. \
+         <span class=\"muted\">This server has no download configured; ask your administrator for the file.</span></li>"
+            .to_owned()
+    };
+    format!(
+        r#"<details open><summary>Get the client (once per computer)</summary>
 <ol>
-<li>Install the <b>OpenTunnel</b> extension (<code>opentunnel.client</code>) from Open VSX or a VSIX file.</li>
-<li>Run <b>Preferences: Configure Runtime Arguments</b> and add the extension to <code>enable-proposed-api</code>, then restart VSCodium:
-<pre>{
-  "enable-proposed-api": ["opentunnel.client"]
-}</pre></li>
+{install}
+<li>Run <b>Preferences: Configure Runtime Arguments</b>, add the line below, then restart VSCodium:
+<pre>"enable-proposed-api": ["remotium.client"]</pre></li>
 <li>Click <b>Open in VSCodium</b> above. The link is valid for 60 seconds and works once.</li>
-</ol></details>"#;
+</ol></details>"#
+    )
+}
 
 #[derive(Deserialize)]
 pub struct LaunchForm {

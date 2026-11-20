@@ -12,10 +12,10 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use opentunnel_protocol::{
+use remotium_protocol::{
     messages::ErrorCode,
     frame::{read_frame, write_frame},
-    messages::{AgentMsg, BrokerMsg},
+    messages::{AgentMsg, ServerMsg},
     mux::{self, Mode},
     ws::WsStream,
 };
@@ -81,9 +81,9 @@ async fn run_agent(state: Arc<AppState>, socket: WebSocket, env: String, peer: S
     if env_id != env {
         anyhow::bail!("agent token is for env {env:?} but agent says {env_id:?}");
     }
-    write_frame(&mut ctrl, &BrokerMsg::Welcome { heartbeat_secs: 30 }).await?;
+    write_frame(&mut ctrl, &ServerMsg::Welcome { heartbeat_secs: 30 }).await?;
 
-    let (ctrl_tx, mut ctrl_rx) = mpsc::unbounded_channel::<BrokerMsg>();
+    let (ctrl_tx, mut ctrl_rx) = mpsc::unbounded_channel::<ServerMsg>();
     let conn_id = state.registry.next_conn_id();
     let info = AgentInfo {
         agent_id,
@@ -106,7 +106,7 @@ async fn run_agent(state: Arc<AppState>, socket: WebSocket, env: String, peer: S
         loop {
             let msg = tokio::select! {
                 m = ctrl_rx.recv() => match m { Some(m) => m, None => break },
-                _ = hb.tick() => BrokerMsg::Heartbeat,
+                _ = hb.tick() => ServerMsg::Heartbeat,
             };
             write_frame(&mut w, &msg).await?;
         }
@@ -179,7 +179,7 @@ pub async fn client_stream(
 }
 
 /// HTTP refusal of a data-plane upgrade: status, plus the matching close code in
-/// `x-opentunnel-close-code` and a JSON body.
+/// `x-remotium-close-code` and a JSON body.
 fn refuse(code: ErrorCode, message: &str) -> Response {
     let status = match code {
         ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
@@ -189,6 +189,6 @@ fn refuse(code: ErrorCode, message: &str) -> Response {
         ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
     };
     let mut r = (status, axum::Json(serde_json::json!({ "error": code, "message": message }))).into_response();
-    r.headers_mut().insert("x-opentunnel-close-code", code.close_code().into());
+    r.headers_mut().insert("x-remotium-close-code", code.close_code().into());
     r
 }

@@ -1,5 +1,5 @@
-# OpenTunnel broker configuration. Copy to broker.toml and adjust.
-# Check it with: opentunnel-broker -c broker.toml check-config
+# Remotium server configuration. Copy to server.toml and adjust.
+# Check it with: remotium-server -c server.toml check-config
 
 [server]
 # One listener for everything. Behind a reverse proxy, listen on loopback or a private
@@ -10,7 +10,7 @@ listen = "0.0.0.0:443"
 # data_listen = "0.0.0.0:8443"
 # public_data_url = "https://data.tunnels.example.com"
 
-# How clients and agents reach this broker.
+# How clients and agents reach this server.
 public_url = "https://tunnels.example.com"
 
 # Serve HTTPS directly (e.g. Let's Encrypt). Renewed files are picked up every 6 hours.
@@ -18,7 +18,7 @@ tls_cert = "/etc/letsencrypt/live/tunnels.example.com/fullchain.pem"
 tls_key = "/etc/letsencrypt/live/tunnels.example.com/privkey.pem"
 
 # Client tokens (hashed) survive restarts here.
-state_file = "/var/lib/opentunnel/state.json"
+state_file = "/var/lib/remotium/state.json"
 
 # WebSocket ping interval; keep it below your proxies' idle timeouts.
 keepalive_secs = 25
@@ -26,10 +26,10 @@ keepalive_secs = 25
 editor_scheme = "vscodium"
 
 [auth]
-# Identity comes from an auth proxy in front of the broker (oauth2-proxy, Authelia,
+# Identity comes from an auth proxy in front of the server (oauth2-proxy, Authelia,
 # nginx auth_request, Cloudflare Access, ...). Only these paths need the proxy login:
 #   /  /launch  /api/v1/environments  /api/v1/launch-tickets
-# These must bypass it (they use the broker's own tokens):
+# These must bypass it (they use the server's own tokens):
 #   /api/v1/tokens*  /api/v1/sessions*  /data/*  /agent/*  /healthz  /api/v1/status
 trusted_header = "X-Forwarded-Email"
 trusted_proxies = ["127.0.0.1/32", "::1/128"]
@@ -44,7 +44,7 @@ trusted_proxies = ["127.0.0.1/32", "::1/128"]
 # require_trusted_proxy = true
 
 # One block per environment (dev container). Generate a token with
-#   opentunnel-broker gen-token
+#   remotium-server gen-token
 # give the token to the agent (AGENT_TOKEN) and put only its hash here.
 [[env]]
 id = "alice-dev"

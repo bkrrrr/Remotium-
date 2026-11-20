@@ -1,4 +1,4 @@
-//! Shared wire types and stream adapters for OpenTunnel.
+//! Shared wire types and stream adapters for Remotium.
 //!
 //! - [`ws`]: turns a WebSocket (tungstenite or axum) into a tokio byte stream.
 //! - [`frame`]: length-prefixed JSON frames used for stream headers and the control stream.
@@ -10,7 +10,7 @@ pub mod messages;
 pub mod mux;
 pub mod ws;
 
-/// Version of the agent/broker wire protocol.
+/// Version of the agent/server wire protocol.
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// WebSocket close codes used on client data streams.

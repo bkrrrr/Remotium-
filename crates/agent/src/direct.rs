@@ -1,10 +1,10 @@
-//! M0 spike: expose a local REH on a plain WebSocket, no broker involved.
+//! M0 spike: expose a local REH on a plain WebSocket, no server involved.
 //!
 //! Each accepted WebSocket is piped to a fresh TCP connection to the REH. Use only on a
 //! trusted network: the REH connection token is the only protection.
 
 use anyhow::Result;
-use opentunnel_protocol::ws::WsStream;
+use remotium_protocol::ws::WsStream;
 use std::{net::SocketAddr, time::Duration};
 use tokio::net::{TcpListener, TcpStream};
 

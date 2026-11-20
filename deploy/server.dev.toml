@@ -1,11 +1,11 @@
 # Local development config used by docker-compose.yml. NOT for production:
 # it signs in every request from private networks as dev@local and uses fixed agent tokens.
-# For a real server start from broker.example.toml.
+# For a real server start from server.example.toml.
 
 [server]
 listen = "0.0.0.0:8080"
 public_url = "http://localhost:8080"
-state_file = "/var/lib/opentunnel/state.json"
+state_file = "/var/lib/remotium/state.json"
 
 [auth]
 dev_identity = "dev@local"

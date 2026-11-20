@@ -1,4 +1,4 @@
-//! OpenTunnel agent library: REH management and the broker link. The binary is `main.rs`.
+//! Remotium agent library: REH management and the server link. The binary is `main.rs`.
 
 pub mod direct;
 pub mod link;

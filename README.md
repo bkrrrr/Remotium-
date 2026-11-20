@@ -1,27 +1,27 @@
-# OpenTunnel
+# Remotium
 
 An open-source alternative to VS Code Remote Tunnels for **VSCodium**, built so it can be
 offered as a service.
 
 Your desktop VSCodium connects to a VSCodium remote server (REH) running in a dev
 container. Both the editor and the container only open **outbound** HTTPS/WSS connections to
-a broker that runs on any server with a DNS name and TLS. Containers behind NAT or CGNAT
+**Remotium Server**, which runs on any machine with a DNS name and TLS. Containers behind NAT or CGNAT
 work. There is no vendor dependency.
 
 ```
-VSCodium ── opentunnel.client ──WSS──► broker ◄──WSS (yamux)── agent ──► codium-server (REH)
+VSCodium ── remotium.client ──WSS──► server ◄──WSS (yamux)── agent ──► codium-server (REH)
 ```
 
 The editor's own remote machinery does the work (files, terminals, debugging, extensions,
-port forwarding, reconnection). OpenTunnel only sets up the connection and carries the bytes.
+port forwarding, reconnection). Remotium only sets up the connection and carries the bytes.
 
 | Part | What it does |
 |------|--------------|
-| [`crates/broker`](crates/broker) | Control plane (dashboard, tickets, tokens, sessions) and data plane (stream routing). Rust. |
-| [`crates/agent`](crates/agent) | Runs in the dev container, dials the broker, installs and runs one REH per editor version. Rust. |
+| [`crates/server`](crates/server) | Control plane (dashboard, tickets, tokens, sessions) and data plane (stream routing). Rust. |
+| [`crates/agent`](crates/agent) | Runs in the dev container, dials the server, installs and runs one REH per editor version. Rust. |
 | [`crates/protocol`](crates/protocol) | Shared framing, messages, the WebSocket ⇄ byte-stream adapter, yamux driver. |
-| [`client`](client) | The VSCodium extension `opentunnel.client`: a remote authority resolver using `ManagedResolvedAuthority`. TypeScript. |
-| [`deploy`](deploy) | Docker Compose, Dockerfiles, broker configs, reverse-proxy examples. |
+| [`client`](client) | The VSCodium extension `remotium.client`: a remote authority resolver using `ManagedResolvedAuthority`. TypeScript. |
+| [`deploy`](deploy) | Docker Compose, Dockerfiles, server configs, reverse-proxy examples. |
 
 Docs: [architecture](docs/architecture.md) · [protocol](docs/protocol.md) ·
 [security](docs/security.md) · [compatibility](docs/compatibility.md) ·
@@ -38,20 +38,20 @@ build the extension.
 
 ```sh
 docker compose -f deploy/docker-compose.yml up --build -d
-npm --prefix client ci && npm --prefix client run package   # → client/opentunnel-client.vsix
+npm --prefix client ci && npm --prefix client run package   # → client/remotium-client.vsix
 ```
 
 1. **Install the extension** in VSCodium: *Extensions → … → Install from VSIX…* and pick
-   `client/opentunnel-client.vsix`, or run
-   `codium --install-extension client/opentunnel-client.vsix`.
+   `client/remotium-client.vsix`, or run
+   `codium --install-extension client/remotium-client.vsix`.
 2. **Allow its proposed API.** The extension uses the `resolvers` API proposal. Run
    *Preferences: Configure Runtime Arguments*, which opens `~/.vscode-oss/argv.json`, add the
    line below, and restart VSCodium:
    ```jsonc
-   "enable-proposed-api": ["opentunnel.client"]
+   "enable-proposed-api": ["remotium.client"]
    ```
 3. Open <http://localhost:8080>. The `demo` environment shows as online.
-4. Click **Open in VSCodium**. VSCodium asks once whether to trust the broker, then opens a
+4. Click **Open in VSCodium**. VSCodium asks once whether to trust the server, then opens a
    remote window on `/workspace/demo` inside the container.
 
 Check that it works by editing `README.md` in that window, then running:
@@ -61,38 +61,38 @@ docker compose -f deploy/docker-compose.yml exec devenv cat /workspace/demo/READ
 ```
 
 If the browser can't open `vscodium://` links, copy the link from the "Opening VSCodium" page
-and run **OpenTunnel: Open Launch Link** in VSCodium.
+and run **Remotium: Open Launch Link** in VSCodium.
 
 A second environment: `docker compose -f deploy/docker-compose.yml --profile multi up -d`
 starts `devenv2` as env `demo2`.
 
-## Running the broker on a server
+## Running Remotium Server on a VPS
 
-Any VPS with a DNS name works. The broker serves HTTPS itself, or plain HTTP behind a
+Any VPS with a DNS name works. The server serves HTTPS itself, or plain HTTP behind a
 reverse proxy.
 
-1. Build or copy the broker: `docker build -f deploy/Dockerfile.broker -t opentunnel-broker .`
-   (a static binary on Alpine), or `cargo build --release -p opentunnel-broker`.
+1. Build or copy the server: `docker build -f deploy/Dockerfile.server -t remotium-server .`
+   (a static binary on Alpine), or `cargo build --release -p remotium-server`.
 2. Get a certificate, for example with certbot:
    `certbot certonly --standalone -d tunnels.example.com`.
-3. Copy [`deploy/broker.example.toml`](deploy/broker.example.toml) to `broker.toml`. Set
-   `public_url`, `tls_cert` and `tls_key` (the broker reloads renewed certificates every 6
+3. Copy [`deploy/server.example.toml`](deploy/server.example.toml) to `server.toml`. Set
+   `public_url`, `tls_cert` and `tls_key` (the server reloads renewed certificates every 6
    hours), and configure an auth proxy (see below).
-4. For each environment, run `opentunnel-broker gen-token`. Put the hash in an `[[env]]`
+4. For each environment, run `remotium-server gen-token`. Put the hash in an `[[env]]`
    block and give the token to that environment's agent. Add `[[grant]]` blocks for users.
-5. `opentunnel-broker -c broker.toml check-config`, then `opentunnel-broker -c broker.toml`.
+5. `remotium-server -c server.toml check-config`, then `remotium-server -c server.toml`.
 
 Start a devenv anywhere (a laptop, a NAT'd box), pointing it at the server:
 
 ```sh
-BROKER_URL=https://tunnels.example.com AGENT_ENV_ID=alice-dev AGENT_TOKEN=otag_... \
+REMOTIUM_SERVER_URL=https://tunnels.example.com AGENT_ENV_ID=alice-dev AGENT_TOKEN=rmag_... \
   docker compose -f deploy/docker-compose.yml up -d devenv
 ```
 
 ### Authentication
 
-The broker doesn't log users in itself (yet). An auth proxy in front of it does and passes
-the identity on. The broker trusts it only from `trusted_proxies`:
+The server doesn't log users in itself (yet). An auth proxy in front of it does and passes
+the identity on. The server trusts it only from `trusted_proxies`:
 
 - **nginx + oauth2-proxy** (any OIDC provider): [`deploy/examples/nginx.conf`](deploy/examples/nginx.conf).
 - **Signed assertions** (e.g. Cloudflare Access): `[auth.jwt]` verifies them against a JWKS.
@@ -100,23 +100,23 @@ the identity on. The broker trusts it only from `trusted_proxies`:
 
 Only the dashboard, `/launch`, `/api/v1/environments` and `/api/v1/launch-tickets` need
 the proxy login. `/api/v1/tokens*`, `/api/v1/sessions*`, `/data/*` and `/agent/*` must
-bypass it, because they use the broker's own tokens. See [security](docs/security.md).
+bypass it, because they use the server's own tokens. See [security](docs/security.md).
 
 ## Agent configuration
 
 | Variable | Default | |
 |----------|---------|---|
-| `BROKER_URL` | (required) | `https://…` or `http://…` |
-| `AGENT_ENV_ID` | (required) | env id from `broker.toml` |
+| `REMOTIUM_SERVER_URL` | (required) | `https://…` or `http://…` |
+| `AGENT_ENV_ID` | (required) | env id from `server.toml` |
 | `AGENT_TOKEN` / `AGENT_TOKEN_FILE` | (required) | the env's agent token |
 | `AGENT_PROJECTS` | dirs in the workspace root | comma separated |
 | `AGENT_WORKSPACE_ROOT` | `/workspace` | |
-| `AGENT_DATA_DIR` | `/data` | server cache, tokens, extensions |
-| `AGENT_SERVER_URL_TEMPLATE` | VSCodium GitHub releases | `${version}`, `${release}`, `${releaseSuffix}`, `${os}`, `${arch}`, `${commit}`, `${quality}` |
-| `AGENT_SERVER_SEARCH_PATH` | `/opt/vscodium-server` in the image | pre-installed servers as `<dir>/<commit>` |
+| `AGENT_DATA_DIR` | `/data` | REH cache, tokens, extensions |
+| `AGENT_REH_URL_TEMPLATE` | VSCodium GitHub releases | `${version}`, `${release}`, `${releaseSuffix}`, `${os}`, `${arch}`, `${commit}`, `${quality}` |
+| `AGENT_REH_SEARCH_PATH` | `/opt/vscodium-server` in the image | pre-installed servers as `<dir>/<commit>` |
 | `AGENT_ALLOW_UNVERIFIED_DOWNLOADS` | off | accept downloads without a `.sha256` |
-| `AGENT_IDLE_TIMEOUT_SECS` | 1800 | stop a server with no connections |
-| `AGENT_REAP_AFTER_DAYS` | 14 | delete unused downloaded servers |
+| `AGENT_IDLE_TIMEOUT_SECS` | 1800 | stop an REH with no connections |
+| `AGENT_REAP_AFTER_DAYS` | 14 | delete unused downloaded REHs |
 
 ## Development
 
@@ -136,7 +136,7 @@ packages the VSIX, and runs the phase 3 suite in VSCodium under Xvfb against the
 stack, for the release pinned in `compat.json` and the latest VSCodium release (also weekly,
 to catch upstream changes early).
 
-Without a broker, the M0 direct mode connects VSCodium straight to an agent. See
+Without a server, the M0 direct mode connects VSCodium straight to an agent. See
 [feasibility](docs/feasibility.md).
 
 ## License

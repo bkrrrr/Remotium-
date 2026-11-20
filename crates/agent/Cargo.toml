@@ -1,5 +1,5 @@
 [package]
-name = "opentunnel-agent"
+name = "remotium-agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,7 @@ flate2 = "1.1.11"
 futures = "0.3.34"
 hex = "0.4.3"
 libc = "0.2.191"
-opentunnel-protocol = { version = "0.1.0", path = "../protocol" }
+remotium-protocol = { version = "0.1.0", path = "../protocol" }
 rand = "0.10.4"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "http2"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }

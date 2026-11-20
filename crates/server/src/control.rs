@@ -12,7 +12,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use opentunnel_protocol::messages::{ErrorCode, ServerVersion};
+use remotium_protocol::messages::{ErrorCode, ServerVersion};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
@@ -161,7 +161,7 @@ pub fn create_launch(state: &AppState, user: &str, env_id: &str, project: &str) 
     let proj = env.projects.iter().find(|p| p.name == project).ok_or_else(|| ApiError::forbidden("no access to this project"))?;
     let ticket = state.tokens.issue_ticket(user, env_id, project);
     let uri = format!(
-        "{}://opentunnel.client/connect?ticket={}&env={}&path={}&broker={}",
+        "{}://remotium.client/connect?ticket={}&env={}&path={}&server={}",
         state.config.server.editor_scheme,
         pct(&ticket),
         pct(env_id),

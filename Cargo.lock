@@ -1321,83 +1321,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
-name = "opentunnel-agent"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "flate2",
- "futures",
- "hex",
- "libc",
- "opentunnel-protocol",
- "rand 0.10.4",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "yamux",
-]
-
-[[package]]
-name = "opentunnel-broker"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "axum-server",
- "base64 0.23.1",
- "clap",
- "futures",
- "hex",
- "ipnet",
- "jsonwebtoken",
- "opentunnel-agent",
- "opentunnel-protocol",
- "rand 0.10.4",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "tokio-util",
- "toml",
- "tower-http 0.7.1",
- "tracing",
- "tracing-subscriber",
- "yamux",
-]
-
-[[package]]
-name = "opentunnel-protocol"
-version = "0.1.0"
-dependencies = [
- "axum",
- "bytes",
- "futures",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tungstenite 0.30.0",
- "yamux",
-]
-
-[[package]]
 name = "p256"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1654,6 +1577,84 @@ name = "regex-syntax"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d902046e6a28a1e4c3cab97258a0ce11e994903f01c2d97a9447a0b3df85f4f6"
+
+[[package]]
+name = "remotium-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "flate2",
+ "futures",
+ "hex",
+ "libc",
+ "rand 0.10.4",
+ "remotium-protocol",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "yamux",
+]
+
+[[package]]
+name = "remotium-protocol"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tungstenite 0.30.0",
+ "yamux",
+]
+
+[[package]]
+name = "remotium-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-server",
+ "base64 0.23.1",
+ "bytes",
+ "clap",
+ "futures",
+ "hex",
+ "ipnet",
+ "jsonwebtoken",
+ "rand 0.10.4",
+ "remotium-agent",
+ "remotium-protocol",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "toml",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "yamux",
+]
 
 [[package]]
 name = "reqwest"

@@ -1,10 +1,11 @@
-//! OpenTunnel broker: control plane (dashboard, tickets, tokens, sessions) and data plane
+//! Remotium server: control plane (dashboard, tickets, tokens, sessions) and data plane
 //! (agent links and client streams).
 
 pub mod config;
 pub mod control;
 pub mod dashboard;
 pub mod data;
+pub mod downloads;
 pub mod proxyauth;
 pub mod registry;
 pub mod tokens;
@@ -21,6 +22,7 @@ pub struct AppState {
     pub tokens: tokens::Tokens,
     pub registry: registry::Registry,
     pub jwks: Option<proxyauth::JwtVerifier>,
+    pub client: Option<downloads::ClientPackage>,
     pub started: Instant,
 }
 
@@ -32,7 +34,8 @@ impl AppState {
 
     pub fn with_verifier(config: config::Config, jwks: Option<proxyauth::JwtVerifier>) -> Arc<Self> {
         let tokens = tokens::Tokens::new(config.server.state_file.clone());
-        Arc::new(Self { config, tokens, registry: Default::default(), jwks, started: Instant::now() })
+        let client = downloads::ClientPackage::load(config.server.client_vsix.as_deref());
+        Arc::new(Self { config, tokens, registry: Default::default(), jwks, client, started: Instant::now() })
     }
 }
 
@@ -46,6 +49,8 @@ pub fn control_router(state: Arc<AppState>) -> Router {
         .route("/", get(dashboard::index))
         .route("/launch", post(dashboard::launch))
         .route("/healthz", get(|| async { "ok" }))
+        .route("/downloads/remotium-client.vsix", get(downloads::vsix))
+        .route("/downloads/remotium-client.vsix.sha256", get(downloads::vsix_sha256))
         .route("/api/v1/status", get(control::status))
         .route("/api/v1/environments", get(control::environments))
         .route("/api/v1/launch-tickets", post(control::launch_ticket))

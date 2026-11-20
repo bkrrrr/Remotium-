@@ -18,7 +18,7 @@ Version 1. JSON field names are camelCase.
 
 The dashboard (`GET /`, `POST /launch`) is server-rendered HTML on top of the same functions.
 
-Launch URI: `<editor_scheme>://opentunnel.client/connect?ticket=T&env=E&path=/workspace/p&broker=<public_url>`.
+Launch URI: `<editor_scheme>://remotium.client/connect?ticket=T&env=E&path=/workspace/p&server=<public_url>`.
 
 Errors are `{error, message}` with these codes:
 
@@ -28,7 +28,7 @@ Errors are `{error, message}` with these codes:
 | 401 | `unauthorized`, `expired`, `reused` | missing/invalid/expired token; `reused` means a rotated refresh token was replayed and the sign-in was revoked |
 | 403 | `forbidden` | no grant, or a token used for another env |
 | 404 | `not_found` | unknown session |
-| 409 | `version_unavailable` | no server for this editor version could be installed |
+| 409 | `version_unavailable` | no REH for this editor version could be installed |
 | 503 | `offline` | the environment's agent isn't connected |
 | 500 | `internal` | |
 
@@ -40,17 +40,17 @@ revokes the whole sign-in. Stream token 60 s, reusable for reconnects within its
 
 ### Client stream: `GET /data/v1/stream`
 
-WebSocket upgrade with `Authorization: Bearer <streamToken>` (never in the URL). The broker
+WebSocket upgrade with `Authorization: Bearer <streamToken>` (never in the URL). The server
 validates the token, the grant and the env, and opens the agent stream **before** answering.
 Refusals are plain HTTP responses with the JSON error body and header
-`x-opentunnel-close-code`:
+`x-remotium-close-code`:
 
 | HTTP | close code | |
 |---|---|---|
 | 401 | 4401 | invalid or expired stream token |
 | 403 | 4403 | forbidden |
 | 503 | 4404 | environment offline |
-| 409 | 4409 | server version unavailable |
+| 409 | 4409 | REH version unavailable |
 | 500 | 4500 | internal |
 
 After `101`, binary frames carry raw bytes in both directions. Text frames are treated as
@@ -68,19 +68,19 @@ Frames on yamux streams: big-endian `u32` length + JSON, at most 1 MiB.
 **Control stream** (stream 1, opened by the agent):
 
 ```jsonc
-// agent → broker, first message
+// agent → server, first message
 {"type":"hello","agentId":"…","envId":"demo","projects":["demo"],"arch":"linux-x64","version":"0.1.0"}
-// broker → agent
+// server → agent
 {"type":"welcome","heartbeatSecs":30}
 {"type":"ensureServer","id":7,"server":{"commit":"c072…","quality":"stable","version":"1.143.17232","release":null}}
-// agent → broker
+// agent → server
 {"type":"ensureServerResult","id":7,"result":{"status":"ok","connectionToken":"…"}}
 {"type":"ensureServerResult","id":7,"result":{"status":"error","code":"versionUnavailable","message":"…"}}
 // both directions
 {"type":"heartbeat"}
 ```
 
-**Data streams** (opened by the broker), first frame and answer:
+**Data streams** (opened by the server), first frame and answer:
 
 ```jsonc
 {"v":1,"kind":"reh","commit":"c072…","sessionId":"ses_…"}   // kind "tcp" is reserved

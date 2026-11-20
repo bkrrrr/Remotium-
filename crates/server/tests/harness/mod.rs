@@ -1,9 +1,9 @@
-//! In-process broker + agent + fake REH (a Python echo server) for integration tests.
+//! In-process server + agent + fake REH (a Python echo server) for integration tests.
 #![allow(dead_code)]
 
 use futures::{SinkExt, StreamExt};
-use opentunnel_agent::{link, manager};
-use opentunnel_broker::{app, config::Config, AppState};
+use remotium_agent::{link, manager};
+use remotium_server::{app, config::Config, AppState};
 use std::{net::SocketAddr, path::Path, sync::Arc, time::Duration};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
@@ -57,7 +57,7 @@ pub struct Stack {
     pub http: reqwest::Client,
     pub manager: Arc<manager::ServerManager>,
     agent: Option<JoinHandle<()>>,
-    broker: JoinHandle<()>,
+    server: JoinHandle<()>,
 }
 
 pub fn config(addr: SocketAddr) -> Config {
@@ -93,14 +93,14 @@ envs = ["demo"]
 
 impl Stack {
     pub async fn start() -> Stack {
-        opentunnel_broker::install_crypto_provider();
+        remotium_server::install_crypto_provider();
         let dir = tempfile::tempdir().unwrap();
         install_fake_reh(&dir.path().join("prebaked"));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let state = AppState::new(config(addr)).unwrap();
         let svc = app(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
-        let broker = tokio::spawn(async move { axum::serve(listener, svc).await.unwrap() });
+        let server = tokio::spawn(async move { axum::serve(listener, svc).await.unwrap() });
         let manager = manager::ServerManager::new(manager::ManagerConfig {
             cache_dir: dir.path().join("servers"),
             state_dir: dir.path().join("state"),
@@ -121,7 +121,7 @@ impl Stack {
             http: reqwest::Client::new(),
             manager,
             agent: None,
-            broker,
+            server,
         };
         s.start_agent();
         s.wait_online(true).await;
@@ -130,7 +130,7 @@ impl Stack {
 
     pub fn start_agent(&mut self) {
         let cfg = link::LinkConfig {
-            broker_url: self.base.clone(),
+            server_url: self.base.clone(),
             agent_token: AGENT_TOKEN.into(),
             agent_id: "test".into(),
             env_id: "demo".into(),
@@ -199,7 +199,7 @@ impl Stack {
 impl Drop for Stack {
     fn drop(&mut self) {
         self.stop_agent();
-        self.broker.abort();
+        self.server.abort();
         // Stop fake servers started for this stack.
         let state = self.dir.path().join("state/servers").join(COMMIT).join("server.json");
         if let Ok(b) = std::fs::read(&state) {
@@ -245,7 +245,7 @@ pub async fn echo(ws: &mut Ws, data: &[u8]) -> Vec<u8> {
     got
 }
 
-/// The close code the broker sends right after the upgrade, if any.
+/// The close code the server sends right after the upgrade, if any.
 pub async fn close_code(ws: &mut Ws) -> Option<u16> {
     match tokio::time::timeout(Duration::from_secs(10), ws.next()).await.ok()?? {
         Ok(Message::Close(Some(f))) => Some(f.code.into()),

@@ -1,6 +1,6 @@
-/** Minimal client for the broker's control API. */
+/** Minimal client for the server's control API. */
 
-export class BrokerError extends Error {
+export class ServerError extends Error {
 	constructor(readonly status: number, readonly code: string, message: string) {
 		super(message);
 	}
@@ -35,7 +35,7 @@ export interface ServerVersion {
 	release?: string;
 }
 
-export class BrokerApi {
+export class ServerApi {
 	constructor(readonly baseUrl: string) {}
 
 	private async call<T>(path: string, body: unknown, bearer?: string, timeoutMs = 20_000): Promise<T> {
@@ -53,7 +53,7 @@ export class BrokerApi {
 			});
 		} catch (e) {
 			const what = (e as Error).name === 'TimeoutError' ? `no answer within ${timeoutMs / 1000} s` : (e as Error).message;
-			throw new BrokerError(0, 'network', `cannot reach broker ${this.baseUrl} (${path}): ${what}`);
+			throw new ServerError(0, 'network', `cannot reach server ${this.baseUrl} (${path}): ${what}`);
 		}
 		if (res.status === 204) {
 			return undefined as T;
@@ -66,7 +66,7 @@ export class BrokerApi {
 			json = { error: 'bad_response', message: text.slice(0, 200) };
 		}
 		if (!res.ok) {
-			throw new BrokerError(res.status, json.error ?? 'error', json.message ?? `HTTP ${res.status}`);
+			throw new ServerError(res.status, json.error ?? 'error', json.message ?? `HTTP ${res.status}`);
 		}
 		return json as T;
 	}

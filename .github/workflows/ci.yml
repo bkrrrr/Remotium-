@@ -21,7 +21,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Test (unit + broker/agent integration, needs python3)
+      - name: Test (unit + server/agent integration, needs python3)
         run: cargo test --workspace --locked
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -42,8 +42,8 @@ jobs:
       - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
-          name: opentunnel-client-vsix
-          path: client/opentunnel-client.vsix
+          name: remotium-client-vsix
+          path: client/remotium-client.vsix
 
   e2e:
     needs: [rust, client]
@@ -83,7 +83,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/vscodium.tgz" -C "$RUNNER_TEMP/vscodium"
           echo "VSCODIUM_PATH=$RUNNER_TEMP/vscodium/codium" >> "$GITHUB_ENV"
 
-      - name: Start broker and devenv
+      - name: Start server and devenv
         run: |
           docker compose -f deploy/docker-compose.yml up --build -d
           for i in $(seq 1 60); do

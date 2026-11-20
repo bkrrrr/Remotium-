@@ -1,5 +1,5 @@
 [package]
-name = "opentunnel-protocol"
+name = "remotium-protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

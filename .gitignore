@@ -5,8 +5,8 @@ client/.vscode-test/
 *.vsix
 .data/
 servers/
-deploy/broker.toml
-!deploy/broker.example.toml
-!deploy/broker.dev.toml
+deploy/server.toml
+!deploy/server.example.toml
+!deploy/server.dev.toml
 .DS_Store
 client/THIRD_PARTY_NOTICES.md

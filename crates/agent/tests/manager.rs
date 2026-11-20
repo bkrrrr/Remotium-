@@ -1,8 +1,8 @@
 mod common;
 
 use common::*;
-use opentunnel_agent::manager::{ManagerConfig, ServerManager};
-use opentunnel_protocol::messages::{ErrorCode, ServerVersion};
+use remotium_agent::manager::{ManagerConfig, ServerManager};
+use remotium_protocol::messages::{ErrorCode, ServerVersion};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

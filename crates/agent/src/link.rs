@@ -1,14 +1,14 @@
-//! The agent's single outbound connection to the broker.
+//! The agent's single outbound connection to the server.
 //!
-//! `wss://<broker>/agent/v1/connect` with the agent token as bearer, then yamux (agent is
+//! `wss://<server>/agent/v1/connect` with the agent token as bearer, then yamux (agent is
 //! the yamux client). The agent opens stream 1 as the control stream; every stream the
-//! broker opens is a data stream that starts with a [`StreamHeader`].
+//! server opens is a data stream that starts with a [`StreamHeader`].
 
 use crate::manager::ServerManager;
 use anyhow::{anyhow, bail, Context, Result};
-use opentunnel_protocol::{
+use remotium_protocol::{
     frame::{read_frame, write_frame},
-    messages::{AgentMsg, BrokerMsg, EnsureResult, ErrorCode, StreamHeader, StreamKind, StreamReply},
+    messages::{AgentMsg, ServerMsg, EnsureResult, ErrorCode, StreamHeader, StreamKind, StreamReply},
     mux::{self, Mode, MuxStream},
     ws::WsStream,
     PROTOCOL_VERSION,
@@ -19,7 +19,7 @@ use tokio_tungstenite::tungstenite::{client::IntoClientRequest, http::HeaderValu
 
 #[derive(Clone, Debug)]
 pub struct LinkConfig {
-    pub broker_url: String,
+    pub server_url: String,
     pub agent_token: String,
     pub agent_id: String,
     pub env_id: String,
@@ -28,8 +28,8 @@ pub struct LinkConfig {
 }
 
 /// `https://host/base` → `wss://host/base/agent/v1/connect` (`http` → `ws`).
-pub fn agent_ws_url(broker_url: &str) -> Result<String> {
-    let base = broker_url.trim_end_matches('/');
+pub fn agent_ws_url(server_url: &str) -> Result<String> {
+    let base = server_url.trim_end_matches('/');
     let rest = if let Some(r) = base.strip_prefix("https://") {
         format!("wss://{r}")
     } else if let Some(r) = base.strip_prefix("http://") {
@@ -37,7 +37,7 @@ pub fn agent_ws_url(broker_url: &str) -> Result<String> {
     } else if base.starts_with("wss://") || base.starts_with("ws://") {
         base.to_owned()
     } else {
-        bail!("broker URL must start with https:// or http://: {broker_url}");
+        bail!("server URL must start with https:// or http://: {server_url}");
     };
     Ok(format!("{rest}/agent/v1/connect"))
 }
@@ -48,8 +48,8 @@ pub async fn run(cfg: LinkConfig, manager: Arc<ServerManager>) {
     loop {
         let started = tokio::time::Instant::now();
         match connect_once(&cfg, &manager).await {
-            Ok(()) => tracing::warn!("broker connection closed"),
-            Err(e) => tracing::warn!("broker connection failed: {e:#}"),
+            Ok(()) => tracing::warn!("server connection closed"),
+            Err(e) => tracing::warn!("server connection failed: {e:#}"),
         }
         // A connection that lived a while resets the backoff.
         if started.elapsed() > Duration::from_secs(30) {
@@ -65,17 +65,17 @@ pub async fn run(cfg: LinkConfig, manager: Arc<ServerManager>) {
 
 async fn connect_once(cfg: &LinkConfig, manager: &Arc<ServerManager>) -> Result<()> {
     crate::install_crypto_provider();
-    let url = agent_ws_url(&cfg.broker_url)?;
+    let url = agent_ws_url(&cfg.server_url)?;
     let mut req = url.as_str().into_client_request()?;
     req.headers_mut().insert(
         "authorization",
         HeaderValue::from_str(&format!("Bearer {}", cfg.agent_token)).context("agent token is not a valid header value")?,
     );
-    tracing::info!(%url, "connecting to broker");
+    tracing::info!(%url, "connecting to server");
     let (ws, _resp) = match tokio::time::timeout(Duration::from_secs(30), tokio_tungstenite::connect_async(req)).await {
         Err(_) => bail!("timed out connecting to {url}"),
         Ok(Err(tokio_tungstenite::tungstenite::Error::Http(resp))) => {
-            bail!("broker refused the agent: HTTP {}", resp.status())
+            bail!("server refused the agent: HTTP {}", resp.status())
         }
         Ok(r) => r?,
     };
@@ -97,11 +97,11 @@ async fn connect_once(cfg: &LinkConfig, manager: &Arc<ServerManager>) -> Result<
         },
     )
     .await?;
-    let welcome: BrokerMsg = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut ctrl))
+    let welcome: ServerMsg = tokio::time::timeout(Duration::from_secs(30), read_frame(&mut ctrl))
         .await
-        .map_err(|_| anyhow!("no welcome from broker"))??;
-    let BrokerMsg::Welcome { heartbeat_secs } = welcome else { bail!("expected welcome, got {welcome:?}") };
-    tracing::info!(env = cfg.env_id, "connected to broker");
+        .map_err(|_| anyhow!("no welcome from server"))??;
+    let ServerMsg::Welcome { heartbeat_secs } = welcome else { bail!("expected welcome, got {welcome:?}") };
+    tracing::info!(env = cfg.env_id, "connected to server");
 
     let (ctrl_r, mut ctrl_w) = tokio::io::split(ctrl);
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<AgentMsg>();
@@ -122,12 +122,12 @@ async fn connect_once(cfg: &LinkConfig, manager: &Arc<ServerManager>) -> Result<
     let reader = async move {
         let mut ctrl_r = ctrl_r;
         loop {
-            let msg: BrokerMsg = match read_frame(&mut ctrl_r).await {
+            let msg: ServerMsg = match read_frame(&mut ctrl_r).await {
                 Ok(m) => m,
                 Err(e) => return Err::<(), std::io::Error>(e),
             };
             match msg {
-                BrokerMsg::EnsureServer { id, server } => {
+                ServerMsg::EnsureServer { id, server } => {
                     let mgr = mgr.clone();
                     let out = out_tx.clone();
                     tokio::spawn(async move {
@@ -141,8 +141,8 @@ async fn connect_once(cfg: &LinkConfig, manager: &Arc<ServerManager>) -> Result<
                         let _ = out.send(AgentMsg::EnsureServerResult { id, result });
                     });
                 }
-                BrokerMsg::Heartbeat => {}
-                BrokerMsg::Welcome { .. } => tracing::debug!("unexpected welcome"),
+                ServerMsg::Heartbeat => {}
+                ServerMsg::Welcome { .. } => tracing::debug!("unexpected welcome"),
             }
         }
     };
@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn ws_urls() {
         assert_eq!(agent_ws_url("https://t.example.com/").unwrap(), "wss://t.example.com/agent/v1/connect");
-        assert_eq!(agent_ws_url("http://broker:8080").unwrap(), "ws://broker:8080/agent/v1/connect");
-        assert!(agent_ws_url("broker:8080").is_err());
+        assert_eq!(agent_ws_url("http://server:8080").unwrap(), "ws://server:8080/agent/v1/connect");
+        assert!(agent_ws_url("server:8080").is_err());
     }
 }

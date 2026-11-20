@@ -1,8 +1,8 @@
 //! Connected agents, one per environment.
 
-use opentunnel_protocol::{
+use remotium_protocol::{
     frame::{read_frame, write_frame},
-    messages::{BrokerMsg, EnsureResult, ErrorCode, ServerVersion, StreamHeader, StreamReply},
+    messages::{ServerMsg, EnsureResult, ErrorCode, ServerVersion, StreamHeader, StreamReply},
     mux::{MuxHandle, MuxStream},
 };
 use serde::Serialize;
@@ -21,7 +21,7 @@ pub struct AgentConn {
     pub conn_id: u64,
     pub info: AgentInfo,
     pub mux: MuxHandle,
-    ctrl_tx: mpsc::UnboundedSender<BrokerMsg>,
+    ctrl_tx: mpsc::UnboundedSender<ServerMsg>,
     pending: Mutex<HashMap<u64, oneshot::Sender<EnsureResult>>>,
     next_req: AtomicU64,
     pub open_streams: AtomicUsize,
@@ -61,7 +61,7 @@ impl Drop for StreamGuard {
 }
 
 impl AgentConn {
-    pub fn new(conn_id: u64, info: AgentInfo, mux: MuxHandle, ctrl_tx: mpsc::UnboundedSender<BrokerMsg>) -> Self {
+    pub fn new(conn_id: u64, info: AgentInfo, mux: MuxHandle, ctrl_tx: mpsc::UnboundedSender<ServerMsg>) -> Self {
         Self {
             conn_id,
             info,
@@ -78,7 +78,7 @@ impl AgentConn {
         let id = self.next_req.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, tx);
-        if self.ctrl_tx.send(BrokerMsg::EnsureServer { id, server: v.clone() }).is_err() {
+        if self.ctrl_tx.send(ServerMsg::EnsureServer { id, server: v.clone() }).is_err() {
             self.pending.lock().unwrap().remove(&id);
             return Err(RouteError::new(ErrorCode::Offline, "environment disconnected"));
         }
@@ -98,7 +98,7 @@ impl AgentConn {
         }
     }
 
-    pub fn send(&self, msg: BrokerMsg) -> bool {
+    pub fn send(&self, msg: ServerMsg) -> bool {
         self.ctrl_tx.send(msg).is_ok()
     }
 
@@ -109,8 +109,8 @@ impl AgentConn {
         self.open_streams.fetch_add(1, Ordering::SeqCst);
         let guard = StreamGuard(self.clone());
         let header = StreamHeader {
-            v: opentunnel_protocol::PROTOCOL_VERSION,
-            kind: opentunnel_protocol::messages::StreamKind::Reh,
+            v: remotium_protocol::PROTOCOL_VERSION,
+            kind: remotium_protocol::messages::StreamKind::Reh,
             commit: commit.into(),
             session_id: session_id.into(),
         };

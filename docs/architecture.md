@@ -3,10 +3,10 @@
 ```mermaid
 flowchart LR
   subgraph Desktop
-    E[VSCodium] --- X["opentunnel.client<br/>(resolver: ManagedResolvedAuthority)"]
+    E[VSCodium] --- X["remotium.client<br/>(resolver: ManagedResolvedAuthority)"]
   end
-  subgraph Server["Public server (DNS + TLS)"]
-    P[optional reverse / auth proxy] --> B[broker]
+  subgraph Public["Public machine (DNS + TLS)"]
+    P[optional reverse / auth proxy] --> B[server]
   end
   subgraph DevEnv["Dev container (may be behind NAT)"]
     A[agent] --> R1["codium-server<br/>commit A"]
@@ -17,7 +17,7 @@ flowchart LR
   A -- "one WSS + yamux<br/>/agent/v1/connect" --> P
 ```
 
-Both the editor and the dev container only make **outbound** connections. The broker is the
+Both the editor and the dev container only make **outbound** connections. The server is the
 only component that needs a public address.
 
 ## Launch flow
@@ -25,16 +25,16 @@ only component that needs a public address.
 ```mermaid
 sequenceDiagram
   participant U as Browser
-  participant B as Broker
+  participant B as Server
   participant C as VSCodium + client
   participant A as Agent
   U->>B: GET / (identity from auth proxy)
   U->>B: POST /launch (env, project)
-  B-->>U: vscodium://opentunnel.client/connect?ticket=…
+  B-->>U: vscodium://remotium.client/connect?ticket=…
   U->>C: open link
   C->>B: POST /api/v1/tokens {ticket}
   B-->>C: access + refresh token
-  C->>C: open vscode-remote://opentunnel+env/workspace/project
+  C->>C: open vscode-remote://remotium+env/workspace/project
   C->>B: POST /api/v1/sessions {env, commit, version}
   B->>A: ensureServer (control stream)
   A->>A: download/verify/start REH for commit (or reuse)
@@ -51,21 +51,21 @@ sequenceDiagram
 
 ## Components
 
-**Client** (`client/`). Registers the `opentunnel` remote authority resolver. `resolve()`
+**Client** (`client/`). Registers the `remotium` remote authority resolver. `resolve()`
 creates a session and returns `ManagedResolvedAuthority(makeConnection, connectionToken)`.
 The editor calls `makeConnection` for every connection it needs (management, extension host,
 each forwarded-port connection, every reconnect). Each call opens one binary WebSocket. The
 editor runs its own protocol inside it, including the HTTP-upgrade handshake to the REH and
 session resumption with replay of unacknowledged messages.
 
-**Broker** (`crates/broker`). Control plane (`/`, `/launch`, `/api/v1/*`) and data plane
+**Server** (`crates/server`). Control plane (`/`, `/launch`, `/api/v1/*`) and data plane
 (`/data/*`, `/agent/*`), on one listener or two (`data_listen`). Keeps a registry of
 connected agents (one per env), short-lived tickets, sessions and stream tokens in memory,
 and client tokens (hashed) in `state_file`. For each client WebSocket it opens a yamux stream
 to the env's agent *before* completing the upgrade, then copies bytes.
 
-**Agent** (`crates/agent`). One persistent WSS to the broker carrying yamux. The agent opens
-stream 1 as the control stream; every other stream is opened by the broker for one client
+**Agent** (`crates/agent`). One persistent WSS to the server carrying yamux. The agent opens
+stream 1 as the control stream; every other stream is opened by the server for one client
 connection. The agent keeps one REH per editor commit:
 
 - install from a read-only search path (pre-baked in the image) or download into
@@ -89,7 +89,7 @@ A restarted agent adopts them from `server.json` (pid, port), and editor session
   container restarts behind Docker's port proxy) are noticed quickly.
 - **Agent link:** reconnects with jittered exponential backoff (1 s … 60 s). A newer
   connection for the same env replaces the old one.
-- **Broker restart:** client tokens survive (state file). Sessions don't. The client gets a 401
+- **Server restart:** client tokens survive (state file). Sessions don't. The client gets a 401
   on its next stream, creates a new session and reconnects, all within the editor's
   reconnection, without reloading the window.
 - **Backpressure:** yamux per-stream flow control, with the link's receive window capped at

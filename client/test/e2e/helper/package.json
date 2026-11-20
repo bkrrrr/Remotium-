@@ -1,6 +1,6 @@
 {
   "name": "e2e-helper",
-  "publisher": "opentunnel-test",
+  "publisher": "remotium-test",
   "version": "0.0.0",
   "private": true,
   "engines": { "vscode": "^1.100.0" },
@@ -10,11 +10,11 @@
   "contributes": {
     "configuration": {
       "properties": {
-        "opentunnelE2e.launchLink": { "type": "string", "default": "" },
-        "opentunnelE2e.resultFile": { "type": "string", "default": "" },
-        "opentunnelE2e.suite": { "type": "string", "default": "smoke" },
-        "opentunnelE2e.controlDir": { "type": "string", "default": "" },
-        "opentunnelE2e.only": { "type": "string", "default": "" }
+        "remotiumE2e.launchLink": { "type": "string", "default": "" },
+        "remotiumE2e.resultFile": { "type": "string", "default": "" },
+        "remotiumE2e.suite": { "type": "string", "default": "smoke" },
+        "remotiumE2e.controlDir": { "type": "string", "default": "" },
+        "remotiumE2e.only": { "type": "string", "default": "" }
       }
     }
   }

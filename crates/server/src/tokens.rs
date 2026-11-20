@@ -1,7 +1,7 @@
 //! Tickets, client tokens, sessions and stream tokens.
 //!
 //! Every secret is random (32 bytes, base64url) and stored only as its SHA-256. Access and
-//! refresh tokens are persisted to `state_file` so clients stay signed in across a broker
+//! refresh tokens are persisted to `state_file` so clients stay signed in across a server
 //! restart; tickets, sessions and stream tokens are short-lived and kept in memory.
 //!
 //! Refresh tokens rotate. Presenting an already-rotated refresh token revokes its whole
@@ -154,7 +154,7 @@ impl Tokens {
     }
 
     pub fn issue_ticket(&self, user: &str, env: &str, project: &str) -> String {
-        let t = random_secret("ott_");
+        let t = random_secret("rmt_");
         let mut g = self.inner.lock().unwrap();
         g.tickets.insert(
             hash(&t),
@@ -178,8 +178,8 @@ impl Tokens {
     }
 
     fn issue_pair(g: &mut Inner, user: &str, env: &str, family: &str) -> TokenPair {
-        let at = random_secret("ota_");
-        let rt = random_secret("otr_");
+        let at = random_secret("rma_");
+        let rt = random_secret("rmr_");
         let n = now();
         let grant = |expires| ClientGrant { user: user.into(), env: env.into(), family: family.into(), expires };
         g.p.access.insert(hash(&at), grant(n + ACCESS_TTL));
@@ -268,7 +268,7 @@ impl Tokens {
     }
 
     fn stream_token_locked(g: &mut Inner, session: &str) -> String {
-        let t = random_secret("ots_");
+        let t = random_secret("rms_");
         g.streams.insert(hash(&t), StreamToken { session: session.into(), expires: now() + STREAM_TTL });
         t
     }
