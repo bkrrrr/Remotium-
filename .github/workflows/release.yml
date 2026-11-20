@@ -21,7 +21,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         run: echo "version=$(scripts/check-version.sh "$GITHUB_REF_NAME" | tail -1)" >> "$GITHUB_OUTPUT"
 
@@ -48,14 +48,14 @@ jobs:
             name: macos-aarch64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - name: musl toolchain
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools >/dev/null
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: remotium-client-vsix
           path: vsix
@@ -71,7 +71,7 @@ jobs:
         if: matrix.name != 'macos-x86_64'
         run: |
           "dist/remotium-host-${{ needs.version.outputs.version }}-${{ matrix.name }}" --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.name }}
           path: dist/
@@ -82,8 +82,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Create the release
@@ -115,15 +115,15 @@ jobs:
     env:
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Skip without a token
         if: env.OVSX_PAT == ''
         run: echo "::notice::OVSX_PAT is not set; not publishing to Open VSX. See docs/releasing.md."
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: env.OVSX_PAT != ''
         with:
           node-version: 22
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: env.OVSX_PAT != ''
         with:
           name: remotium-client-vsix

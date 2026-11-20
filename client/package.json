@@ -89,7 +89,7 @@
     "package": "npm run build && cp ../LICENSE ../THIRD_PARTY_NOTICES.md . && vsce package --no-dependencies --allow-missing-repository --out remotium-client.vsix",
     "test:e2e": "npm run build && node test/e2e/run-host.js",
     "test:phase3": "npm run build && node test/e2e/run-host.js --suite phase3 --timeout 600000",
-    "test:unit": "esbuild test/unit/*.test.ts --bundle --main-fields=module,main --platform=node --outdir=out-test --external:vscode --log-level=warning && node --test out-test/",
+    "test:unit": "esbuild test/unit/*.test.ts --bundle --main-fields=module,main --platform=node --outdir=out-test --external:vscode --log-level=warning && node --test out-test/*.test.js",
     "test:e2e:vsix": "npm run package && node test/e2e/first-install.js",
     "test:browser": "node test/e2e/run-browser.js"
   },
