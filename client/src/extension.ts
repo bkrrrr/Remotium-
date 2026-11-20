@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { AuthStore } from './auth';
-import { AUTHORITY_PREFIX, DIRECT_ENV, envFromAuthority, RemotiumResolver } from './resolver';
+import { AUTHORITY_PREFIX, envFromAuthority, RemotiumResolver } from './resolver';
 import { setUp } from './setup';
 import { LaunchUriHandler } from './uriHandler';
 
@@ -36,13 +36,6 @@ export function activate(context: vscode.ExtensionContext): void {
 	};
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('remotium.connectDirect', async () => {
-			const folder = await vscode.window.showInputBox({ prompt: 'Remote folder to open', value: '/workspace/demo' });
-			if (folder) {
-				const uri = vscode.Uri.from({ scheme: 'vscode-remote', authority: `${AUTHORITY_PREFIX}+${DIRECT_ENV}`, path: folder });
-				await vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow: true });
-			}
-		}),
 		vscode.commands.registerCommand('remotium.disconnect', async () => {
 			if (!remoteEnv()) {
 				return;

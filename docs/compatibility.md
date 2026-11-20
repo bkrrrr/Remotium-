@@ -6,8 +6,8 @@
   (1.143.17232 on macOS x64 against Linux x64 containers).
 - **Server:** the VSCodium REH of exactly the editor's commit. Any OS/arch with a VSCodium
   REH build (`linux`, `alpine`, `darwin` × `x64`, `arm64`, `armhf`, …).
-- **Extensions:** from Open VSX (VSCodium's default gallery). Tested: built-in Node
-  debugging (js-debug), `ms-python.debugpy` with `ms-python.python` installed remotely.
+- **Extensions:** from Open VSX (VSCodium's default gallery), installed into the REH like
+  with any VSCodium remote. Tested: debugging with the built-in Node debugger (js-debug).
 
 ## Build match
 

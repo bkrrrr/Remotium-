@@ -15,8 +15,7 @@ ARG VSCODIUM_VERSION=1.143.17232
 ARG VSCODIUM_RELEASE=
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl git openssh-client procps tini less nano \
-      python3 python3-pip python3-venv nodejs npm build-essential \
+      ca-certificates curl git openssh-client procps tini less nodejs \
  && rm -rf /var/lib/apt/lists/*
 
 # Pre-bake the pinned VSCodium REH, verified against the release's .sha256 file.
@@ -28,7 +27,7 @@ RUN set -eu; \
     curl -fsSL -o /tmp/reh.tgz "$url"; \
     echo "$(curl -fsSL "$url.sha256" | cut -d' ' -f1)  /tmp/reh.tgz" | sha256sum -c -; \
     mkdir -p /tmp/reh && tar -xzf /tmp/reh.tgz -C /tmp/reh; \
-    commit="$(python3 -c 'import json;print(json.load(open("/tmp/reh/product.json"))["commit"])')"; \
+    commit="$(node -p 'require("/tmp/reh/product.json").commit')"; \
     mkdir -p /opt/vscodium-server && mv /tmp/reh "/opt/vscodium-server/$commit"; \
     rm /tmp/reh.tgz; \
     echo "pre-baked VSCodium REH $v ($commit)"

@@ -1,10 +1,10 @@
 //! Remotium agent: runs inside a dev container, dials the server and serves VSCodium REHs.
 
-use remotium_agent::{direct, link, manager, platform, reh};
+use remotium_agent::{link, manager, platform};
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
-use std::{net::SocketAddr, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -63,14 +63,6 @@ struct Args {
     /// WebSocket ping interval towards the server.
     #[arg(long, env = "AGENT_KEEPALIVE_SECS", default_value_t = 25)]
     keepalive_secs: u64,
-
-    /// M0 spike: serve a plain WebSocket on this address that pipes to the REH in --reh-dir.
-    #[arg(long, env = "AGENT_DIRECT_LISTEN")]
-    direct_listen: Option<SocketAddr>,
-
-    /// Directory of an extracted VSCodium REH, for direct mode.
-    #[arg(long, env = "AGENT_REH_DIR")]
-    reh_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -80,21 +72,6 @@ async fn main() -> Result<()> {
         .init();
     remotium_agent::install_crypto_provider();
     let args = Args::parse();
-
-    if let Some(listen) = args.direct_listen {
-        let Some(dir) = args.reh_dir else { bail!("--direct-listen needs --reh-dir") };
-        let state = args.data_dir.join("direct");
-        let extra = ["--server-data-dir".to_owned(), state.join("server-data").display().to_string()];
-        let server = reh::start(&dir, &state, &extra).await?;
-        println!("connection token: {}", server.connection_token);
-        let port = server.port;
-        tokio::select! {
-            r = direct::serve(listen, port) => r?,
-            _ = shutdown_signal() => {}
-        }
-        drop(server);
-        return Ok(());
-    }
 
     let server_url = args.server_url.context("--server-url (REMOTIUM_SERVER_URL) is required")?;
     let env_id = args.env_id.context("--env-id (AGENT_ENV_ID) is required")?;

@@ -6,13 +6,6 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/index.js"
-    },
-    {
-      "name": "Python: app.py",
-      "type": "debugpy",
-      "request": "launch",
-      "program": "${workspaceFolder}/app.py",
-      "console": "integratedTerminal"
     }
   ]
 }

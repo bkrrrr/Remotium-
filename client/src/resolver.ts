@@ -6,7 +6,6 @@ import { StatusItem } from './status';
 import { connectWs, WsConnectError } from './wsMessagePassing';
 
 export const AUTHORITY_PREFIX = 'remotium';
-export const DIRECT_ENV = 'direct';
 
 /** Close codes from the server's data plane. */
 const CLOSE = { unauthorized: 4401, forbidden: 4403, offline: 4404, versionUnavailable: 4409, internal: 4500 };
@@ -40,9 +39,6 @@ export class RemotiumResolver implements vscode.RemoteAuthorityResolver {
 	async resolve(authority: string, context: vscode.RemoteAuthorityResolverContext): Promise<vscode.ResolverResult> {
 		const env = envFromAuthority(authority);
 		this.log.info(`resolving ${authority} (attempt ${context.resolveAttempt})`);
-		if (env === DIRECT_ENV) {
-			return this.resolveDirect();
-		}
 		this.status ??= new StatusItem(env);
 		this.status.set('resolving');
 		try {
@@ -145,20 +141,6 @@ export class RemotiumResolver implements vscode.RemoteAuthorityResolver {
 		} catch (e) {
 			this.log.warn(`revoking session failed: ${(e as Error).message}`);
 		}
-	}
-
-	/** M0 spike: connect straight to an agent in --direct-listen mode. */
-	private resolveDirect(): vscode.ResolverResult {
-		const cfg = vscode.workspace.getConfiguration('remotium');
-		const url = cfg.get<string>('directUrl');
-		if (!url) {
-			throw vscode.RemoteAuthorityResolverError.NotAvailable('Set remotium.directUrl to use the direct connection.', false);
-		}
-		const token = cfg.get<string>('directConnectionToken') || undefined;
-		return new vscode.ManagedResolvedAuthority(() => {
-			const n = ++this.connectionCount;
-			return connectWs(url, { log: this.log, label: `direct#${n}` });
-		}, token);
 	}
 }
 

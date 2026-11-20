@@ -31,16 +31,6 @@
           "type": "string",
           "default": "",
           "description": "Base URL of the Remotium server, e.g. https://tunnels.example.com. Set automatically when a launch link is opened."
-        },
-        "remotium.directUrl": {
-          "type": "string",
-          "default": "",
-          "description": "Development only: WebSocket URL of an agent started with --direct-listen. Used for the authority remotium+direct and bypasses the server."
-        },
-        "remotium.directConnectionToken": {
-          "type": "string",
-          "default": "",
-          "description": "Development only: connection token printed by the agent in direct mode."
         }
       }
     },
@@ -48,10 +38,6 @@
       {
         "command": "remotium.openLaunchLink",
         "title": "Remotium: Open Launch Link"
-      },
-      {
-        "command": "remotium.connectDirect",
-        "title": "Remotium: Connect Direct (dev)"
       },
       {
         "command": "remotium.disconnect",
@@ -102,8 +88,7 @@
   "scripts": {
     "build": "tsc --noEmit -p . && esbuild src/extension.ts --bundle --main-fields=module,main --platform=node --target=node20 --format=cjs --external:vscode --external:bufferutil --external:utf-8-validate --outfile=out/extension.js --sourcemap",
     "watch": "esbuild src/extension.ts --bundle --main-fields=module,main --platform=node --target=node20 --format=cjs --external:vscode --external:bufferutil --external:utf-8-validate --outfile=out/extension.js --sourcemap --watch",
-    "package": "npm run build && cp ../THIRD_PARTY_NOTICES.md . && vsce package --no-dependencies --allow-missing-repository --out remotium-client.vsix",
-    "test:smoke": "node test/e2e/launch.js",
+    "package": "npm run build && cp ../LICENSE ../THIRD_PARTY_NOTICES.md . && vsce package --no-dependencies --allow-missing-repository --out remotium-client.vsix",
     "test:e2e": "npm run build && node test/e2e/run-server.js",
     "test:phase3": "npm run build && node test/e2e/run-server.js --suite phase3 --on-request test/e2e/compose-action.sh --timeout 900000",
     "test:unit": "esbuild test/unit/*.test.ts --bundle --main-fields=module,main --platform=node --outdir=out-test --external:vscode --log-level=warning && node --test out-test/",

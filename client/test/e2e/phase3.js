@@ -1,6 +1,5 @@
-// Phase 3 validation, run in the remote window: terminals, port forwarding, Node and Python
-// debugging, installing an Open VSX extension remotely, reconnecting after a server restart
-// and after an agent restart. Restarts are done by the outer runner (run-server.js), which
+// Phase 3 validation, run in the remote window: terminals, port forwarding, debugging (Node),
+// reconnecting after a server restart and after an agent restart. Restarts are done by the outer runner (run-server.js), which
 // watches <controlDir>/request-<name> and answers with <controlDir>/done-<name>.
 const vscode = require('vscode');
 const fs = require('fs');
@@ -85,7 +84,7 @@ exports.run = async function run() {
 
 	await step('port forwarding', async () => {
 		const server = vscode.window.createTerminal({ name: 'http.server', cwd: root });
-		server.sendText('python3 -m http.server 8000 --bind 127.0.0.1');
+		server.sendText(`node -e "const fs=require('fs');require('http').createServer((q,r)=>r.end(fs.readFileSync('README.md'))).listen(8000,'127.0.0.1')"`);
 		const local = await vscode.env.asExternalUri(vscode.Uri.parse('http://127.0.0.1:8000/README.md'));
 		const text = await waitFor(async () => {
 			const res = await fetch(local.toString(true), { signal: AbortSignal.timeout(5000) });
@@ -103,19 +102,6 @@ exports.run = async function run() {
 		return hitsBreakpoint(folder, file, 1, { type: 'node', request: 'launch', name: 'dbg node', program: file.path }, 'x', '41');
 	});
 
-	await step('install Open VSX extension remotely (ms-python.debugpy)', async () => {
-		// Resolves once installed. Remote extensions aren't listed in this (local) extension
-		// host's vscode.extensions, so the Python debugging step below is the proof it runs.
-		await vscode.commands.executeCommand('workbench.extensions.installExtension', 'ms-python.debugpy');
-		return 'installed';
-	});
-
-	await step('debug python', async () => {
-		const file = at('dbg.py');
-		await vscode.workspace.fs.writeFile(file, Buffer.from('x = 41\nx += 1\nprint(x)\n'));
-		return hitsBreakpoint(folder, file, 1, { type: 'debugpy', request: 'launch', name: 'dbg py', program: file.path, console: 'internalConsole', justMyCode: true }, 'x', '41');
-	});
-
 	const reconnects = async name => {
 		await request(name);
 		await waitFor(async () => {
@@ -129,7 +115,7 @@ exports.run = async function run() {
 	await step('reconnect after server restart', () => reconnects('restart-server'));
 	await step('reconnect after agent restart', () => reconnects('restart-agent'));
 
-	for (const f of ['.phase3-term', '.phase3-reconnect', 'dbg.js', 'dbg.py']) {
+	for (const f of ['.phase3-term', '.phase3-reconnect', 'dbg.js']) {
 		try { await vscode.workspace.fs.delete(at(f)); } catch { }
 	}
 	result.ok = result.failed.length === 0;

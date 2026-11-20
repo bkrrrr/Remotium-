@@ -47,9 +47,6 @@ fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify({
 	'extensions.autoUpdate': false,
 	'update.mode': 'none',
 	'telemetry.telemetryLevel': 'off',
-	// Publishers allowed by this policy count as trusted, so installing an extension (the
-	// phase 3 suite installs ms-python.debugpy) never shows the publisher trust dialog.
-	'extensions.allowed': { '*': true },
 	...settings,
 	...(launchLink ? {
 		'remotiumE2e.launchLink': launchLink,

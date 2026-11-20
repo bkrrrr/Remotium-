@@ -27,18 +27,9 @@ The client's resolver returns
 
 ## Run
 
-```sh
-cargo build -p remotium-agent
-./target/debug/remotium-agent --direct-listen 127.0.0.1:8099 --server-dir ./reh --data-dir ./.data
-# prints "connection token: <hex>"
-npm --prefix client run build
-node client/test/e2e/launch.js \
-  --folder-uri "vscode-remote://remotium+direct$PWD/demo" \
-  --settings '{"remotium.directUrl":"ws://127.0.0.1:8099","remotium.directConnectionToken":"<hex>"}'
-```
-
-`launch.js` starts an isolated VSCodium profile on that URI and runs `test/e2e/smoke.js`
-in the window's local extension host.
+The spike's direct mode (agent `--direct-listen`, client setting `directUrl`) connected
+VSCodium straight to an agent with no authentication. It was removed once the server path
+worked; it is in the history at commit `3e034b6` ("Add M0 direct-mode spike").
 
 ## Results
 
@@ -69,4 +60,4 @@ HTTP-upgrade handshake inside the stream, and the REH checks the connection toke
   turns the editor into plain Node (`bad option: --user-data-dir`). The launcher removes it.
 - **macOS socket path limit:** the editor's IPC socket sits in `--user-data-dir` and must
   stay under 103 characters, so the launcher keeps the profile in a short temp dir.
-- Data in the WebSocket is opaque to us: no framing on our side is needed in direct mode.
+- Data in the WebSocket is opaque to us: no framing of our own is needed on top of it.

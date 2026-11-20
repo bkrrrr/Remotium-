@@ -155,9 +155,6 @@ npm --prefix client run test:phase3     # terminals, ports, debugging, Open VSX,
 
 Releasing: see [docs/releasing.md](docs/releasing.md).
 
-Without a server, the M0 direct mode connects VSCodium straight to an agent. See
-[feasibility](docs/feasibility.md).
-
 ## License
 
 MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
