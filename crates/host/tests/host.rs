@@ -61,7 +61,19 @@ impl Host {
 
     async fn start_in(dir: tempfile::TempDir, addr: Option<SocketAddr>) -> Host {
         let state = app_state(dir.path());
-        let l = tokio::net::TcpListener::bind(addr.unwrap_or_else(|| "127.0.0.1:0".parse().unwrap())).await.unwrap();
+        let want = addr.unwrap_or_else(|| "127.0.0.1:0".parse().unwrap());
+        // Rebinding the address of a host that was just stopped: allow the OS a moment.
+        let mut tries = 0;
+        let l = loop {
+            match tokio::net::TcpListener::bind(want).await {
+                Ok(l) => break l,
+                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && tries < 50 => {
+                    tries += 1;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+                Err(e) => panic!("bind {want}: {e}"),
+            }
+        };
         let addr = l.local_addr().unwrap();
         let svc = router(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
         let task = tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
@@ -289,6 +301,8 @@ async fn host_restart_keeps_devices_and_the_running_server() {
     // Stop the host (the server keeps running) and start a new one on the same data.
     let Host { dir, addr, task, state, _cleanup, .. } = h;
     task.abort();
+    // abort() only requests cancellation; wait until the task (and its listener) is gone.
+    let _ = task.await;
     drop(state);
     std::mem::forget(_cleanup); // the new host's guard cleans up
     let h = Host::start_in(dir, Some(addr)).await;
