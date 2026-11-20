@@ -1,5 +1,5 @@
 // Phase 3 validation, run in the remote window: terminals, port forwarding, debugging (Node),
-// reconnecting after a server restart and after an agent restart. Restarts are done by the outer runner (run-server.js), which
+// reconnecting after a host restart. Restarts are done by the outer runner (run-host.js), which
 // watches <controlDir>/request-<name> and answers with <controlDir>/done-<name>.
 const vscode = require('vscode');
 const fs = require('fs');
@@ -83,9 +83,13 @@ exports.run = async function run() {
 	});
 
 	await step('port forwarding', async () => {
-		const server = vscode.window.createTerminal({ name: 'http.server', cwd: root });
-		server.sendText(`node -e "const fs=require('fs');require('http').createServer((q,r)=>r.end(fs.readFileSync('README.md'))).listen(8000,'127.0.0.1')"`);
-		const local = await vscode.env.asExternalUri(vscode.Uri.parse('http://127.0.0.1:8000/README.md'));
+		// A random port: when the host is this same machine, a fixed one would collide with the
+		// local end of the forward.
+		const portFile = at('.phase3-port');
+		const server = vscode.window.createTerminal({ name: 'http server', cwd: root });
+		server.sendText(`node -e "const fs=require('fs');const s=require('http').createServer((q,r)=>r.end(fs.readFileSync('README.md'))).listen(0,'127.0.0.1',()=>fs.writeFileSync('.phase3-port',String(s.address().port)))"`);
+		const port = await waitFor(async () => Number(Buffer.from(await vscode.workspace.fs.readFile(portFile)).toString()), 30000, 'the remote HTTP server to start');
+		const local = await vscode.env.asExternalUri(vscode.Uri.parse(`http://127.0.0.1:${port}/README.md`));
 		const text = await waitFor(async () => {
 			const res = await fetch(local.toString(true), { signal: AbortSignal.timeout(5000) });
 			return res.ok && (await res.text());
@@ -93,7 +97,7 @@ exports.run = async function run() {
 		const expected = Buffer.from(await vscode.workspace.fs.readFile(at('README.md'))).toString();
 		if (text !== expected) throw new Error('forwarded response differs from the remote README.md');
 		server.dispose();
-		return `remote 8000 → ${local.authority}`;
+		return `remote ${port} → ${local.authority}`;
 	});
 
 	await step('debug node', async () => {
@@ -112,10 +116,9 @@ exports.run = async function run() {
 		await terminalWrites(term, at('.phase3-term'), name);
 		return 'file system and existing terminal work, no reload';
 	};
-	await step('reconnect after server restart', () => reconnects('restart-server'));
-	await step('reconnect after agent restart', () => reconnects('restart-agent'));
+	await step('reconnect after host restart', () => reconnects('restart-host'));
 
-	for (const f of ['.phase3-term', '.phase3-reconnect', 'dbg.js']) {
+	for (const f of ['.phase3-term', '.phase3-reconnect', '.phase3-port', 'dbg.js']) {
 		try { await vscode.workspace.fs.delete(at(f)); } catch { }
 	}
 	result.ok = result.failed.length === 0;

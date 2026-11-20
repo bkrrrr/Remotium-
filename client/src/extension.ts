@@ -1,15 +1,15 @@
 import * as vscode from 'vscode';
-import { AuthStore } from './auth';
-import { AUTHORITY_PREFIX, envFromAuthority, RemotiumResolver } from './resolver';
+import { HostStore } from './hosts';
+import { AUTHORITY_PREFIX, hostIdFromAuthority, remoteUri, RemotiumResolver } from './resolver';
 import { setUp } from './setup';
-import { LaunchUriHandler } from './uriHandler';
+import { Pairing } from './uriHandler';
 
 export function activate(context: vscode.ExtensionContext): void {
 	const log = vscode.window.createOutputChannel('Remotium', { log: true });
 	context.subscriptions.push(log);
 
-	const auth = new AuthStore(context, log);
-	const resolver = new RemotiumResolver(auth, log);
+	const hosts = new HostStore(context, log);
+	const resolver = new RemotiumResolver(hosts, log);
 	// Without "enable-proposed-api" in argv.json (a fresh install), using the resolver API
 	// throws. Everything else still works, so the extension can offer to fix it.
 	let apiAvailable = true;
@@ -22,66 +22,63 @@ export function activate(context: vscode.ExtensionContext): void {
 			void setUp(log);
 		}
 	}
-	const uriHandler = new LaunchUriHandler(auth, log, () => apiAvailable ? true : setUp(log, { modal: true }).then(() => false));
-	context.subscriptions.push(
-		vscode.window.registerUriHandler(uriHandler),
-		{ dispose: () => resolver.status?.dispose() },
-	);
+	const pairing = new Pairing(hosts, log, () => (apiAvailable ? true : setUp(log, { modal: true }).then(() => false)));
+	context.subscriptions.push(vscode.window.registerUriHandler(pairing), { dispose: () => resolver.status?.dispose() });
 
-	const remoteEnv = (): string | undefined => {
-		// env.remoteAuthority belongs to the resolvers proposal; this works without it.
+	/** The host of this window, if it is a Remotium window. env.remoteAuthority is proposed API. */
+	const currentHostId = (): string | undefined => {
 		const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
-		const a = vscode.env.remoteName === AUTHORITY_PREFIX && folder?.scheme === 'vscode-remote' ? folder.authority : undefined;
-		return a?.startsWith(`${AUTHORITY_PREFIX}+`) ? envFromAuthority(a) : undefined;
+		return vscode.env.remoteName === AUTHORITY_PREFIX && folder?.scheme === 'vscode-remote' ? hostIdFromAuthority(folder.authority) : undefined;
+	};
+
+	const pickHost = async (placeHolder: string) => {
+		const list = hosts.list();
+		if (!list.length) {
+			void vscode.window.showInformationMessage('Remotium: no hosts yet. Run `remotium-host pair` on the machine and open the link, or use "Remotium: Add Host…".');
+			return undefined;
+		}
+		const pick = await vscode.window.showQuickPick(
+			list.map(h => ({ label: h.name, description: h.url, detail: h.folder, host: h })),
+			{ placeHolder },
+		);
+		return pick?.host;
 	};
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('remotium.disconnect', async () => {
-			if (!remoteEnv()) {
-				return;
-			}
-			await resolver.disconnect();
-			await vscode.commands.executeCommand('workbench.action.remote.close');
+		vscode.commands.registerCommand('remotium.addHost', async (link?: string, opts?: { confirm?: boolean; open?: boolean }) => {
+			link ??= await vscode.window.showInputBox({ prompt: 'Paste the pairing link printed by `remotium-host pair`', ignoreFocusOut: true });
+			return link ? (await pairing.pairWith(link, opts)) !== undefined : false;
 		}),
-		vscode.commands.registerCommand('remotium.signOut', async () => {
-			const env = remoteEnv() ?? (await vscode.window.showInputBox({ prompt: 'Environment to sign out of' }));
-			if (!env) {
-				return;
+		vscode.commands.registerCommand('remotium.openHost', async () => {
+			const h = await pickHost('Open which host?');
+			if (h) {
+				await vscode.commands.executeCommand('vscode.openFolder', remoteUri(h, h.folder), { forceNewWindow: true });
 			}
-			await resolver.disconnect();
-			await auth.signOut(env);
-			void vscode.window.showInformationMessage(`Remotium: signed out of ${env}.`);
-			if (remoteEnv()) {
+		}),
+		vscode.commands.registerCommand('remotium.removeHost', async () => {
+			const h = await pickHost('Forget which host? (Revoke it on the host with `remotium-host revoke`.)');
+			if (h) {
+				await hosts.remove(h.id);
+				void vscode.window.showInformationMessage(`Remotium: forgot ${h.name}. On the host, run \`remotium-host revoke ${h.deviceId}\` to revoke this VSCodium.`);
+			}
+		}),
+		vscode.commands.registerCommand('remotium.disconnect', async () => {
+			if (currentHostId()) {
 				await vscode.commands.executeCommand('workbench.action.remote.close');
 			}
 		}),
 		vscode.commands.registerCommand('remotium.showLog', () => log.show()),
 		vscode.commands.registerCommand('remotium.setUp', (opts?: { confirm?: boolean }) => setUp(log, { confirm: opts?.confirm ?? true, modal: true })),
-		// For browsers that can't open vscodium:// links: paste the link instead.
-		vscode.commands.registerCommand('remotium.openLaunchLink', async (link?: string, opts?: { openFolder?: boolean }) => {
-			link ??= await vscode.window.showInputBox({ prompt: 'Paste the launch link from the Remotium dashboard', ignoreFocusOut: true });
-			if (!link) {
-				return false;
-			}
-			let uri: vscode.Uri;
-			try {
-				uri = vscode.Uri.parse(link.trim(), true);
-			} catch {
-				void vscode.window.showErrorMessage('Remotium: that is not a launch link.');
-				return false;
-			}
-			return uriHandler.handle(uri, opts?.openFolder ?? true);
-		}),
 		vscode.commands.registerCommand('remotium.menu', async () => {
-			const env = remoteEnv();
-			const user = env ? await auth.user(env) : undefined;
+			const id = currentHostId();
+			const h = id ? hosts.get(id) : undefined;
 			const pick = await vscode.window.showQuickPick(
 				[
 					{ label: '$(debug-disconnect) Disconnect', id: 'remotium.disconnect' },
-					{ label: '$(sign-out) Sign Out', id: 'remotium.signOut' },
+					{ label: '$(remote) Open Host…', id: 'remotium.openHost' },
 					{ label: '$(output) Show Log', id: 'remotium.showLog' },
 				],
-				{ placeHolder: env ? `Remotium: ${env}${user ? ` (${user})` : ''} via ${auth.serverFor(env) ?? '?'}` : 'Remotium' },
+				{ placeHolder: h ? `Remotium: ${h.name} (${h.url})` : 'Remotium' },
 			);
 			if (pick) {
 				await vscode.commands.executeCommand(pick.id);

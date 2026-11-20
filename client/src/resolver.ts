@@ -1,160 +1,90 @@
 import * as vscode from 'vscode';
-import { AuthStore } from './auth';
-import { ServerApi, ServerError, SessionInfo } from './serverApi';
+import { agentFor, createSession, HostError } from './hostApi';
+import { HostRecord, HostStore } from './hosts';
+import { toWebSocketUrl } from './pairing';
 import { getProductInfo } from './productInfo';
 import { StatusItem } from './status';
 import { connectWs, WsConnectError } from './wsMessagePassing';
 
 export const AUTHORITY_PREFIX = 'remotium';
 
-/** Close codes from the server's data plane. */
-const CLOSE = { unauthorized: 4401, forbidden: 4403, offline: 4404, versionUnavailable: 4409, internal: 4500 };
-
-/** `remotium+<env>` → `<env>` */
-export function envFromAuthority(authority: string): string {
+/** `remotium+<hostId>` → `<hostId>` */
+export function hostIdFromAuthority(authority: string): string {
 	const plus = authority.indexOf('+');
 	if (plus < 0 || authority.slice(0, plus) !== AUTHORITY_PREFIX) {
-		throw new Error(`not an Remotium authority: ${authority}`);
+		throw new Error(`not a Remotium authority: ${authority}`);
 	}
 	return decodeURIComponent(authority.slice(plus + 1));
 }
 
-interface ActiveSession extends SessionInfo {
-	env: string;
-	server: string;
-	streamTokenExpiresAt: number;
+export function remoteUri(host: Pick<HostRecord, 'id'>, folder: string): vscode.Uri {
+	return vscode.Uri.from({ scheme: 'vscode-remote', authority: `${AUTHORITY_PREFIX}+${host.id}`, path: folder });
 }
 
 export class RemotiumResolver implements vscode.RemoteAuthorityResolver {
 	private connectionCount = 0;
-	private session: ActiveSession | undefined;
 	status: StatusItem | undefined;
 
-	constructor(private readonly auth: AuthStore, private readonly log: vscode.LogOutputChannel) {}
-
-	get currentSession(): ActiveSession | undefined {
-		return this.session;
-	}
+	constructor(private readonly hosts: HostStore, private readonly log: vscode.LogOutputChannel) {}
 
 	async resolve(authority: string, context: vscode.RemoteAuthorityResolverContext): Promise<vscode.ResolverResult> {
-		const env = envFromAuthority(authority);
+		const id = hostIdFromAuthority(authority);
 		this.log.info(`resolving ${authority} (attempt ${context.resolveAttempt})`);
-		this.status ??= new StatusItem(env);
+		const loaded = await this.hosts.load(id);
+		if (!loaded) {
+			throw vscode.RemoteAuthorityResolverError.NotAvailable(`This VSCodium isn't paired with host ${id}. Run \`remotium-host pair\` on the host and open the link.`, false);
+		}
+		const { host, token } = loaded;
+		this.status ??= new StatusItem(host.name);
 		this.status.set('resolving');
 		try {
-			const s = await this.createSession(env);
-			this.log.info(`session ${s.sessionId} on ${s.server}`);
-			return new vscode.ManagedResolvedAuthority(() => this.connect(env), s.connectionToken);
+			const p = getProductInfo();
+			const { connectionToken } = await createSession(host, token, { commit: p.commit, quality: p.quality, version: p.version, release: p.release });
+			const streamUrl = `${toWebSocketUrl(host.url)}/remotium/v1/stream?commit=${encodeURIComponent(p.commit)}`;
+			this.log.info(`session on ${host.url}`);
+			return new vscode.ManagedResolvedAuthority(() => this.connect(host, token, streamUrl), connectionToken);
 		} catch (e) {
 			this.status.set('error', (e as Error).message);
 			throw toResolverError(e);
 		}
 	}
 
-	private async createSession(env: string): Promise<ActiveSession> {
-		const product = getProductInfo();
-		const version = { commit: product.commit, quality: product.quality, version: product.version, release: product.release };
-		const attempt = async (force: boolean) => {
-			const { server, token } = await this.auth.accessToken(env, force);
-			const info = await new ServerApi(server).createSession(token, env, version);
-			return { ...info, env, server, streamTokenExpiresAt: Date.now() + info.streamTokenExpiresIn * 1000 };
-		};
-		let s: ActiveSession;
+	/** Called by the editor for every connection, including reconnects. */
+	private async connect(host: HostRecord, token: string, url: string): Promise<vscode.ManagedMessagePassing> {
+		const label = `${host.name}#${++this.connectionCount}`;
+		this.log.info(`${label}: connecting`);
 		try {
-			s = await attempt(false);
+			const mp = await connectWs(url, {
+				headers: { authorization: `Bearer ${token}` },
+				agent: agentFor(host),
+				log: this.log,
+				label,
+				onClosed: err => this.status?.closed(err),
+			});
+			this.status?.opened();
+			this.log.info(`${label}: connected`);
+			return mp;
 		} catch (e) {
-			if (!(e instanceof ServerError) || e.status !== 401 || e.code === 'signed_out') {
-				throw e;
-			}
-			s = await attempt(true);
-		}
-		this.session = s;
-		return s;
-	}
-
-	/** A stream token that is still valid for a few seconds, renewing the session if needed. */
-	private async streamCredentials(env: string, forceNew: boolean): Promise<ActiveSession> {
-		let s = this.session;
-		if (!s || s.env !== env) {
-			return this.createSession(env);
-		}
-		if (!forceNew && s.streamTokenExpiresAt - Date.now() > 10_000) {
-			return s;
-		}
-		this.log.info(`renewing stream token for session ${s.sessionId}`);
-		try {
-			const { server, token } = await this.auth.accessToken(env);
-			const t = await new ServerApi(server).streamToken(token, s.sessionId);
-			s = { ...s, streamToken: t.streamToken, streamTokenExpiresAt: Date.now() + t.expiresIn * 1000 };
-			this.session = s;
-			return s;
-		} catch (e) {
-			// The server forgot the session (e.g. it restarted): start a new one.
-			if (e instanceof ServerError && (e.status === 404 || e.status === 401) && e.code !== 'signed_out') {
-				this.log.info(`session ${s.sessionId} is gone; creating a new one`);
-				return this.createSession(env);
+			this.log.warn(`${label}: connect failed: ${(e as Error).message}`);
+			this.status?.set('reconnecting', (e as Error).message);
+			if (e instanceof WsConnectError && e.status === 401) {
+				throw vscode.RemoteAuthorityResolverError.NotAvailable(`Host ${host.name} no longer accepts this VSCodium (device revoked?). Pair again.`, false);
 			}
 			throw e;
-		}
-	}
-
-	/** Called by the editor for every connection, including reconnects. */
-	private async connect(env: string): Promise<vscode.ManagedMessagePassing> {
-		const n = ++this.connectionCount;
-		const label = `${env}#${n}`;
-		this.log.info(`${label}: connecting`);
-		for (let attempt = 0; ; attempt++) {
-			const s = await this.streamCredentials(env, attempt > 0);
-			try {
-				const mp = await connectWs(s.streamUrl, {
-					headers: { authorization: `Bearer ${s.streamToken}` },
-					log: this.log,
-					label,
-					onClosed: err => this.status?.closed(err),
-				});
-				this.status?.opened();
-				this.log.info(`${label}: connected`);
-				return mp;
-			} catch (e) {
-				const code = e instanceof WsConnectError ? e.closeCode : undefined;
-				const status = e instanceof WsConnectError ? e.status : undefined;
-				this.log.warn(`${label}: connect failed: ${(e as Error).message}`);
-				// The server refuses before the upgrade (HTTP status); close codes cover later failures.
-				if ((status === 401 || code === CLOSE.unauthorized) && attempt === 0) {
-					continue;
-				}
-				this.status?.set('reconnecting', (e as Error).message);
-				throw e;
-			}
-		}
-	}
-
-	async disconnect(): Promise<void> {
-		const s = this.session;
-		if (!s) {
-			return;
-		}
-		this.session = undefined;
-		try {
-			const { server, token } = await this.auth.accessToken(s.env);
-			await new ServerApi(server).revokeSession(token, s.sessionId);
-		} catch (e) {
-			this.log.warn(`revoking session failed: ${(e as Error).message}`);
 		}
 	}
 }
 
 function toResolverError(e: unknown): Error {
-	if (e instanceof ServerError) {
-		switch (e.code) {
-			case 'network':
-			case 'offline':
-				return vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
-			case 'version_unavailable':
-				return vscode.RemoteAuthorityResolverError.NotAvailable(`No matching server for this VSCodium version: ${e.message}`, false);
+	if (e instanceof HostError) {
+		if (e.code === 'network') {
+			return vscode.RemoteAuthorityResolverError.TemporarilyNotAvailable(e.message);
+		}
+		if (e.code === 'version_unavailable') {
+			return vscode.RemoteAuthorityResolverError.NotAvailable(`No VSCodium server for this version on the host: ${e.message}`, false);
 		}
 		if (e.isAuthFailure) {
-			return vscode.RemoteAuthorityResolverError.NotAvailable(`${e.message} Open the environment again from the Remotium dashboard.`, false);
+			return vscode.RemoteAuthorityResolverError.NotAvailable(`${e.message} Run \`remotium-host pair\` on the host and open the new link.`, false);
 		}
 		return vscode.RemoteAuthorityResolverError.NotAvailable(e.message, false);
 	}

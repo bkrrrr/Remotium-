@@ -1,7 +1,7 @@
 {
   "name": "client",
   "displayName": "Remotium",
-  "description": "Open-source remote tunnels for VSCodium: connect to a dev container through an Remotium server.",
+  "description": "Open VSCodium on your own machines over HTTPS, through remotium-host. No broker, no SSH.",
   "publisher": "remotium",
   "version": "0.1.0",
   "license": "MIT",
@@ -26,26 +26,24 @@
   "contributes": {
     "configuration": {
       "title": "Remotium",
-      "properties": {
-        "remotium.serverUrl": {
-          "type": "string",
-          "default": "",
-          "description": "Base URL of the Remotium server, e.g. https://tunnels.example.com. Set automatically when a launch link is opened."
-        }
-      }
+      "properties": {}
     },
     "commands": [
       {
-        "command": "remotium.openLaunchLink",
-        "title": "Remotium: Open Launch Link"
+        "command": "remotium.addHost",
+        "title": "Remotium: Add Host\u2026"
+      },
+      {
+        "command": "remotium.openHost",
+        "title": "Remotium: Open Host\u2026"
+      },
+      {
+        "command": "remotium.removeHost",
+        "title": "Remotium: Remove Host\u2026"
       },
       {
         "command": "remotium.disconnect",
         "title": "Remotium: Disconnect"
-      },
-      {
-        "command": "remotium.signOut",
-        "title": "Remotium: Sign Out"
       },
       {
         "command": "remotium.showLog",
@@ -89,10 +87,11 @@
     "build": "tsc --noEmit -p . && esbuild src/extension.ts --bundle --main-fields=module,main --platform=node --target=node20 --format=cjs --external:vscode --external:bufferutil --external:utf-8-validate --outfile=out/extension.js --sourcemap",
     "watch": "esbuild src/extension.ts --bundle --main-fields=module,main --platform=node --target=node20 --format=cjs --external:vscode --external:bufferutil --external:utf-8-validate --outfile=out/extension.js --sourcemap --watch",
     "package": "npm run build && cp ../LICENSE ../THIRD_PARTY_NOTICES.md . && vsce package --no-dependencies --allow-missing-repository --out remotium-client.vsix",
-    "test:e2e": "npm run build && node test/e2e/run-server.js",
-    "test:phase3": "npm run build && node test/e2e/run-server.js --suite phase3 --on-request test/e2e/compose-action.sh --timeout 900000",
+    "test:e2e": "npm run build && node test/e2e/run-host.js",
+    "test:phase3": "npm run build && node test/e2e/run-host.js --suite phase3 --timeout 600000",
     "test:unit": "esbuild test/unit/*.test.ts --bundle --main-fields=module,main --platform=node --outdir=out-test --external:vscode --log-level=warning && node --test out-test/",
-    "test:e2e:vsix": "node test/e2e/first-install.js"
+    "test:e2e:vsix": "npm run package && node test/e2e/first-install.js",
+    "test:browser": "node test/e2e/run-browser.js"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

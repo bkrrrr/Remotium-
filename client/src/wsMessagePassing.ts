@@ -10,6 +10,8 @@ const PONG_TIMEOUT_MS = 40_000;
 
 export interface WsConnectOptions {
 	headers?: Record<string, string>;
+	/** For certificate pinning (see hostApi.ts). */
+	agent?: import('http').Agent;
 	log: vscode.LogOutputChannel;
 	label: string;
 	/** Called once the stream is closed after it was open. */
@@ -56,7 +58,7 @@ class BufferedEmitter<T> implements vscode.Disposable {
 export function connectWs(url: string, opts: WsConnectOptions): Promise<vscode.ManagedMessagePassing> {
 	const { log, label } = opts;
 	return new Promise((resolve, reject) => {
-		const ws = new WebSocket(url, { headers: opts.headers, perMessageDeflate: false, handshakeTimeout: 30_000 });
+		const ws = new WebSocket(url, { headers: opts.headers, agent: opts.agent, perMessageDeflate: false, handshakeTimeout: 30_000 });
 		ws.binaryType = 'nodebuffer';
 		const onMessage = new BufferedEmitter<Uint8Array>();
 		const onClose = new BufferedEmitter<Error | undefined>();

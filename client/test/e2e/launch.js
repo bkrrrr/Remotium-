@@ -9,8 +9,8 @@
 // --portable runs the editor in portable mode with that data dir. It then reads <dir>/argv.json
 // instead of ~/.vscode-oss/argv.json, so argv.json handling is tested without touching the real
 // one. (Never change HOME for this: on macOS the editor then can't find the login keychain.)
-// --launch-link <uri> runs the server flow instead of a test file: the helper extension opens
-// the link in a local window, then runs smoke.js in the remote window that opens.
+// --pair-link <uri> runs the pairing flow instead of a test file: the helper extension pairs
+// with the host in a local window, then runs the suite in the remote window that opens.
 const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -31,7 +31,7 @@ fs.mkdirSync(work, { recursive: true });
 const settings = JSON.parse(arg('settings', '{}'));
 const timeoutMs = Number(arg('timeout', '180000'));
 const tests = path.resolve(__dirname, arg('tests', 'smoke.js'));
-const launchLink = arg('launch-link');
+const launchLink = arg('pair-link');
 
 // The editor's IPC socket lives in the user data dir and macOS limits socket paths to 103
 // characters, so the profile always goes into a short temp dir.
@@ -49,7 +49,7 @@ fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify({
 	'telemetry.telemetryLevel': 'off',
 	...settings,
 	...(launchLink ? {
-		'remotiumE2e.launchLink': launchLink,
+		'remotiumE2e.pairLink': launchLink,
 		'remotiumE2e.resultFile': path.join(work, 'result.json'),
 		'remotiumE2e.suite': arg('suite', 'smoke'),
 		'remotiumE2e.controlDir': work,
@@ -123,28 +123,12 @@ const child = spawn(codium, args, { env: childEnv, stdio: ['ignore', 'pipe', 'pi
 const logFile = fs.createWriteStream(path.join(work, 'codium.log'));
 child.stdout.pipe(logFile);
 child.stderr.pipe(logFile);
-child.stdout.on('data', d => { const s = d.toString(); if (/\[(smoke|phase3)\]/.test(s)) process.stdout.write(s); });
-// Requests from the in-window suite (e.g. restart the server), answered by --on-request.
-const onRequest = arg('on-request');
-const handled = new Set();
-const control = onRequest && setInterval(() => {
-	for (const f of fs.readdirSync(work)) {
-		const m = /^request-(.+)$/.exec(f);
-		if (!m || handled.has(m[1])) continue;
-		handled.add(m[1]);
-		console.log(`[runner] ${m[1]}`);
-		const r = require('child_process').spawnSync(onRequest, [m[1]], { stdio: 'inherit', shell: false });
-		console.log(`[runner] ${m[1]} → exit ${r.status}`);
-		fs.writeFileSync(path.join(work, `done-${m[1]}`), String(r.status));
-	}
-}, 500);
 // In helper mode the app may not exit on its own if something hangs: stop once a result exists.
 const poll = launchLink && setInterval(() => { if (fs.existsSync(resultFile)) setTimeout(() => child.kill(), 3000); }, 1000);
 const timer = setTimeout(() => { console.error('timeout'); child.kill(); }, timeoutMs);
 child.on('exit', code => {
 	clearTimeout(timer);
 	if (poll) clearInterval(poll);
-	if (control) clearInterval(control);
 	if (!keepProfile) fs.rmSync(profile, { recursive: true, force: true });
 	let result;
 	try { result = JSON.parse(fs.readFileSync(resultFile, 'utf8')); } catch { }

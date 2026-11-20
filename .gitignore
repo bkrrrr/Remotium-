@@ -12,3 +12,4 @@ deploy/server.toml
 client/THIRD_PARTY_NOTICES.md
 client/LICENSE
 out-test/
+client/.e2e/

@@ -23,9 +23,9 @@ exports.activate = async function activate() {
 			const text = fs.readFileSync(argv, 'utf8');
 			write({ ok: ok === true && text.includes('"remotium.client"'), steps: [`setUp returned ${ok}`, `argv.json: ${text.replace(/\s+/g, ' ').slice(-160)}`] });
 		} else {
-			const ok = await vscode.commands.executeCommand('remotium.openLaunchLink', cfg.get('launchLink'));
+			const ok = await vscode.commands.executeCommand('remotium.addHost', cfg.get('pairLink'), { confirm: false });
 			if (ok) return; // The remote window takes over.
-			write({ ok: false, error: 'opening the launch link failed (see the Remotium log)' });
+			write({ ok: false, error: 'pairing failed (see the Remotium log)' });
 		}
 	} catch (e) {
 		write({ ok: false, error: String(e && e.stack || e) });

@@ -10,7 +10,7 @@
   "contributes": {
     "configuration": {
       "properties": {
-        "remotiumE2e.launchLink": { "type": "string", "default": "" },
+        "remotiumE2e.pairLink": { "type": "string", "default": "" },
         "remotiumE2e.resultFile": { "type": "string", "default": "" },
         "remotiumE2e.suite": { "type": "string", "default": "smoke" },
         "remotiumE2e.controlDir": { "type": "string", "default": "" },

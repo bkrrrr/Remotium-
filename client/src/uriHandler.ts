@@ -1,77 +1,74 @@
+import * as os from 'os';
 import * as vscode from 'vscode';
-import { AuthStore } from './auth';
-import { AUTHORITY_PREFIX } from './resolver';
+import { HostError, pair } from './hostApi';
+import { HostRecord, HostStore } from './hosts';
+import { parsePairingLink } from './pairing';
+import { remoteUri } from './resolver';
 
-/**
- * Handles `<scheme>://remotium.client/connect?ticket=…&env=…&path=…&server=…` from the
- * dashboard: trades the one-time ticket for tokens and opens the remote folder.
- */
-export class LaunchUriHandler implements vscode.UriHandler {
+export interface PairOptions {
+	/** Ask before pairing. `false` is for scripted setups and tests. */
+	confirm?: boolean;
+	/** Open the host's folder afterwards (default true). */
+	open?: boolean;
+}
+
+/** Pairs with a host from a pairing link and opens its folder. */
+export class Pairing implements vscode.UriHandler {
 	constructor(
-		private readonly auth: AuthStore,
+		private readonly hosts: HostStore,
 		private readonly log: vscode.LogOutputChannel,
 		/** Resolves to false (after offering setup) when the remote API isn't enabled yet. */
 		private readonly ready: () => boolean | Promise<boolean>,
 	) {}
 
 	async handleUri(uri: vscode.Uri): Promise<void> {
-		await this.handle(uri, true);
+		if (uri.path === '/pair') {
+			await this.pairWith(uri.toString(true));
+		} else {
+			this.log.warn(`ignoring unknown URI path ${uri.path}`);
+		}
 	}
 
-	/** `openFolder = false` only signs in (used by tests and scripted setups). */
-	async handle(uri: vscode.Uri, openFolder: boolean): Promise<boolean> {
-		if (uri.path !== '/connect') {
-			this.log.warn(`ignoring unknown URI path ${uri.path}`);
-			return false;
-		}
+	async pairWith(link: string, opts: PairOptions = {}): Promise<HostRecord | undefined> {
 		if (!(await this.ready())) {
-			this.log.warn('launch link ignored: finish the setup and restart VSCodium first');
-			return false;
+			this.log.warn('pairing postponed: finish the setup and restart VSCodium first');
+			return undefined;
 		}
-		const q = new URLSearchParams(uri.query);
-		const ticket = q.get('ticket');
-		const env = q.get('env');
-		const path = q.get('path') || '/';
-		const server = q.get('server') || vscode.workspace.getConfiguration('remotium').get<string>('serverUrl');
-		if (!ticket || !env || !server) {
-			void vscode.window.showErrorMessage('Remotium: the launch link is incomplete.');
-			return false;
-		}
-		if (!/^https?:\/\//.test(server) || !/^[A-Za-z0-9_-]{1,64}$/.test(env) || !path.startsWith('/')) {
-			void vscode.window.showErrorMessage('Remotium: the launch link is malformed.');
-			return false;
-		}
-		if (!this.auth.isTrustedServer(server)) {
-			const insecure = server.startsWith('http://') && !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(server);
-			const choice = await vscode.window.showWarningMessage(
-				`Connect to the Remotium server at ${server}?`,
-				{
-					modal: true,
-					detail: `The server will get a remote window into environment "${env}". Only continue if you opened this link from your own Remotium dashboard.${insecure ? '\n\nThis server uses plain HTTP, so traffic is not encrypted.' : ''}`,
-				},
-				'Connect',
-			);
-			if (choice !== 'Connect') {
-				return false;
-			}
-			await this.auth.trustServer(server);
-		}
+		let parsed;
 		try {
-			await vscode.window.withProgress(
-				{ location: vscode.ProgressLocation.Notification, title: `Remotium: signing in to ${env}…` },
-				() => this.auth.signIn(server, ticket),
-			);
+			parsed = parsePairingLink(link);
 		} catch (e) {
-			this.log.error(`sign-in failed: ${(e as Error).message}`);
-			void vscode.window.showErrorMessage(`Remotium: sign-in failed: ${(e as Error).message}. Launch links work once and expire after 60 seconds; open it again from the dashboard.`);
-			return false;
+			void vscode.window.showErrorMessage(`Remotium: ${(e as Error).message}`);
+			return undefined;
 		}
-		if (!openFolder) {
-			return true;
+		if (opts.confirm !== false) {
+			const detail = parsed.fingerprint
+				? `Certificate SHA-256: ${parsed.fingerprint.match(/../g)!.join(':').toUpperCase()}\n\nOnly continue if you created this link with \`remotium-host pair\` on that machine.`
+				: 'Only continue if you created this link with `remotium-host pair` on that machine.';
+			const choice = await vscode.window.showWarningMessage(`Pair with the Remotium host at ${parsed.url}?`, { modal: true, detail }, 'Pair');
+			if (choice !== 'Pair') {
+				return undefined;
+			}
 		}
-		const target = vscode.Uri.from({ scheme: 'vscode-remote', authority: `${AUTHORITY_PREFIX}+${env}`, path });
-		this.log.info(`opening ${target.toString()}`);
-		await vscode.commands.executeCommand('vscode.openFolder', target, { forceNewWindow: true });
-		return true;
+		let host: HostRecord;
+		try {
+			const r = await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: `Remotium: pairing with ${parsed.url}…` },
+				() => pair(parsed, parsed.code, `VSCodium on ${os.hostname()}`),
+			);
+			host = { id: r.hostId, url: parsed.url, name: r.name, folder: r.folder, fingerprint: parsed.fingerprint, deviceId: r.deviceId };
+			await this.hosts.add(host, r.deviceToken);
+		} catch (e) {
+			const msg = (e as Error).message;
+			this.log.error(`pairing failed: ${msg}`);
+			const hint = e instanceof HostError && e.code === 'certificate' ? '' : ' Pairing links work once and expire after 10 minutes; create a new one with `remotium-host pair`.';
+			void vscode.window.showErrorMessage(`Remotium: pairing failed: ${msg}.${hint}`);
+			return undefined;
+		}
+		this.log.info(`paired with ${host.name} (${host.url}) as device ${host.deviceId}`);
+		if (opts.open !== false) {
+			await vscode.commands.executeCommand('vscode.openFolder', remoteUri(host, host.folder), { forceNewWindow: true });
+		}
+		return host;
 	}
 }
