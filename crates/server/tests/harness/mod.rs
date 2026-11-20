@@ -61,12 +61,18 @@ pub struct Stack {
 }
 
 pub fn config(addr: SocketAddr) -> Config {
+    config_with(addr, None)
+}
+
+pub fn config_with(addr: SocketAddr, client_vsix: Option<&Path>) -> Config {
+    let client = client_vsix.map(|p| format!("client_vsix = {:?}", p.display().to_string())).unwrap_or_default();
     let toml = format!(
         r#"
 [server]
 listen = "{addr}"
 public_url = "http://{addr}"
 keepalive_secs = 2
+{client}
 
 [auth]
 dev_identity = "dev@local"
@@ -93,12 +99,22 @@ envs = ["demo"]
 
 impl Stack {
     pub async fn start() -> Stack {
+        Self::start_with(None).await
+    }
+
+    /// `client_vsix`: contents of a client package the server should offer.
+    pub async fn start_with(client_vsix: Option<&[u8]>) -> Stack {
         remotium_server::install_crypto_provider();
         let dir = tempfile::tempdir().unwrap();
+        let vsix_path = client_vsix.map(|b| {
+            let p = dir.path().join("remotium-client.vsix");
+            std::fs::write(&p, b).unwrap();
+            p
+        });
         install_fake_reh(&dir.path().join("prebaked"));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let state = AppState::new(config(addr)).unwrap();
+        let state = AppState::new(config_with(addr, vsix_path.as_deref())).unwrap();
         let svc = app(state.clone()).into_make_service_with_connect_info::<SocketAddr>();
         let server = tokio::spawn(async move { axum::serve(listener, svc).await.unwrap() });
         let manager = manager::ServerManager::new(manager::ManagerConfig {

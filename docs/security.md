@@ -32,6 +32,14 @@ after a restart.
 - With `[auth.jwt]`, only asymmetric algorithms are accepted, and audience, expiry and
   (optionally) issuer are checked. Unknown key ids trigger a rate-limited JWKS refresh.
 
+## Public client download
+
+`/downloads/remotium-client.vsix` (+ `.sha256`), `/install.sh` and `/install.ps1` need no
+login: they only hand out the client package that ships with the server. The scripts carry
+the package's SHA-256 and refuse to install a file that doesn't match it. Piping a script
+into a shell trusts the server and its TLS certificate; users who prefer can download the
+VSIX and check the hash themselves.
+
 ## Browser-facing endpoints
 
 `POST /launch` and `POST /api/v1/launch-tickets` reject requests with

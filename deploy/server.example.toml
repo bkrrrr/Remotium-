@@ -24,6 +24,10 @@ state_file = "/var/lib/remotium/state.json"
 keepalive_secs = 25
 # URI scheme of the editor the dashboard links to.
 editor_scheme = "vscodium"
+# The client package offered for download (default: the one inside the server image).
+# client_vsix = "/usr/share/remotium/remotium-client.vsix"
+# Once the client is on Open VSX, link the dashboard to the store instead.
+# client_on_open_vsx = true
 
 [auth]
 # Identity comes from an auth proxy in front of the server (oauth2-proxy, Authelia,
@@ -31,6 +35,7 @@ editor_scheme = "vscodium"
 #   /  /launch  /api/v1/environments  /api/v1/launch-tickets
 # These must bypass it (they use the server's own tokens):
 #   /api/v1/tokens*  /api/v1/sessions*  /data/*  /agent/*  /healthz  /api/v1/status
+#   /downloads/*  /install.sh  /install.ps1   (public client download)
 trusted_header = "X-Forwarded-Email"
 trusted_proxies = ["127.0.0.1/32", "::1/128"]
 

@@ -203,3 +203,48 @@ async fn agent_reconnects_and_sessions_continue() {
     let mut ws = stack.connect(v["streamToken"].as_str().unwrap()).await.unwrap();
     assert_eq!(echo(&mut ws, b"after").await, b"after");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn offers_the_client_package_and_install_scripts() {
+    need_python!();
+    let pkg = random_bytes(40_000, 9);
+    let stack = Stack::start_with(Some(&pkg)).await;
+    let get = |path: &str| {
+        let url = format!("{}{path}", stack.base);
+        let http = stack.http.clone();
+        async move { http.get(url).send().await.unwrap() }
+    };
+    let res = get("/downloads/remotium-client.vsix").await;
+    assert_eq!(res.status().as_u16(), 200);
+    assert!(res.headers()["content-disposition"].to_str().unwrap().contains("remotium-client.vsix"));
+    assert_eq!(res.bytes().await.unwrap().as_ref(), pkg.as_slice());
+
+    let sha = harness_sha256(&pkg);
+    let sum = get("/downloads/remotium-client.vsix.sha256").await.text().await.unwrap();
+    assert_eq!(sum.split_whitespace().next(), Some(sha.as_str()));
+
+    for script in ["/install.sh", "/install.ps1"] {
+        let body = get(script).await.text().await.unwrap();
+        assert!(body.contains(&format!("'{}'", stack.base)), "{script} has the server URL");
+        assert!(body.contains(&sha), "{script} has the checksum");
+        assert!(!body.contains("{{"), "{script} fully rendered");
+    }
+    // The dashboard links the download.
+    let page = get("/").await.text().await.unwrap();
+    assert!(page.contains("downloads/remotium-client.vsix") && page.contains("install.sh"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_client_package_means_404() {
+    need_python!();
+    let stack = Stack::start().await;
+    for path in ["/downloads/remotium-client.vsix", "/install.sh", "/install.ps1"] {
+        let res = stack.http.get(format!("{}{path}", stack.base)).send().await.unwrap();
+        assert_eq!(res.status().as_u16(), 404, "{path}");
+    }
+}
+
+fn harness_sha256(b: &[u8]) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(b))
+}

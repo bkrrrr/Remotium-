@@ -47,7 +47,7 @@ fn page(title: &str, body: &str) -> Html<String> {
     ))
 }
 
-pub async fn index(State(state): State<Arc<AppState>>, ProxyUser(user): ProxyUser) -> Response {
+pub async fn index(State(state): State<Arc<AppState>>, ProxyUser(user): ProxyUser, headers: HeaderMap) -> Response {
     let envs = visible_envs(&state, &user);
     let mut body = format!(
         "<header><h1>Remotium</h1><span class=\"muted\">Signed in as {}</span></header>",
@@ -88,22 +88,31 @@ pub async fn index(State(state): State<Arc<AppState>>, ProxyUser(user): ProxyUse
         }
         body.push_str("</ul></section>");
     }
-    body.push_str(&setup_help(&state));
+    let windows = headers.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).is_some_and(|ua| ua.contains("Windows"));
+    body.push_str(&setup_help(&state, windows));
     let mut r = page("Remotium", &body).into_response();
     r.headers_mut().insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
     r
 }
 
-/// "Get the client" help. Open by default until the visitor has launched something.
-fn setup_help(state: &AppState) -> String {
+/// "Get the client" help: install once per computer, then the client finishes its own setup.
+fn setup_help(state: &AppState, windows: bool) -> String {
+    let server = esc(state.config.server.public_url.trim_end_matches('/'));
     let install = if state.config.server.client_on_open_vsx {
         "<li><a class=\"btn\" href=\"vscodium:extension/remotium.client\">Install Remotium Client</a> \
-         <span class=\"muted\">(opens VSCodium; or search <b>Remotium</b> in its Extensions view)</span></li>"
+         <span class=\"muted\">opens VSCodium; or search <b>Remotium</b> in its Extensions view.</span></li>"
             .to_owned()
     } else if state.client.is_some() {
-        "<li><a class=\"btn\" href=\"downloads/remotium-client.vsix\" download>Download Remotium Client</a>, \
-         then drag the file onto VSCodium's Extensions view (or <b>Extensions: Install from VSIX…</b>).</li>"
-            .to_owned()
+        let (cmd, other) = if windows {
+            (format!("irm {server}/install.ps1 | iex"), format!("macOS/Linux: <code>curl -fsSL {server}/install.sh | sh</code>"))
+        } else {
+            (format!("curl -fsSL {server}/install.sh | sh"), format!("Windows (PowerShell): <code>irm {server}/install.ps1 | iex</code>"))
+        };
+        format!(
+            "<li>Install <b>Remotium Client</b>. Either run this in a terminal:<pre>{cmd}</pre>\
+             <span class=\"muted\">{other}</span><br>or <a class=\"btn\" href=\"downloads/remotium-client.vsix\" download>download it</a> \
+             and drag the file onto VSCodium's Extensions view.</li>"
+        )
     } else {
         "<li>Install <b>Remotium Client</b> (<code>remotium.client</code>) in VSCodium. \
          <span class=\"muted\">This server has no download configured; ask your administrator for the file.</span></li>"
@@ -113,8 +122,8 @@ fn setup_help(state: &AppState) -> String {
         r#"<details open><summary>Get the client (once per computer)</summary>
 <ol>
 {install}
-<li>Run <b>Preferences: Configure Runtime Arguments</b>, add the line below, then restart VSCodium:
-<pre>"enable-proposed-api": ["remotium.client"]</pre></li>
+<li>Start VSCodium. Remotium asks once to finish its setup (allow its remote connection API); accept and restart VSCodium.
+<span class="muted">Manual alternative: run <b>Preferences: Configure Runtime Arguments</b> and add <code>"enable-proposed-api": ["remotium.client"]</code>.</span></li>
 <li>Click <b>Open in VSCodium</b> above. The link is valid for 60 seconds and works once.</li>
 </ol></details>"#
     )

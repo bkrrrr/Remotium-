@@ -51,6 +51,8 @@ pub fn control_router(state: Arc<AppState>) -> Router {
         .route("/healthz", get(|| async { "ok" }))
         .route("/downloads/remotium-client.vsix", get(downloads::vsix))
         .route("/downloads/remotium-client.vsix.sha256", get(downloads::vsix_sha256))
+        .route("/install.sh", get(downloads::install_sh))
+        .route("/install.ps1", get(downloads::install_ps1))
         .route("/api/v1/status", get(control::status))
         .route("/api/v1/environments", get(control::environments))
         .route("/api/v1/launch-tickets", post(control::launch_ticket))

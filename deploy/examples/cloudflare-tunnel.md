@@ -37,6 +37,7 @@ action) for the paths that use the server's own tokens:
 - `tunnels.example.com/data/*`
 - `tunnels.example.com/agent/*`
 - `tunnels.example.com/healthz`
+- `tunnels.example.com/downloads/*`, `/install.sh`, `/install.ps1` (the client download)
 
 ## 3. Verify the Access assertion in the server
 

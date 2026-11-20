@@ -5,3 +5,4 @@ client/.vscode-test
 .git
 *.vsix
 deploy/server.toml
+client/out-test
