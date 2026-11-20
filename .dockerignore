@@ -1,8 +1,0 @@
-target
-**/node_modules
-client/out
-client/.vscode-test
-.git
-*.vsix
-deploy/server.toml
-client/out-test

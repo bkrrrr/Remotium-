@@ -1,5 +1,5 @@
 {
-  "$comment": "VSCodium releases this project is tested against. CI runs the pinned release plus the latest one.",
+  "$comment": "VSCodium release remotium-host is tested against; its web UI is what browsers get. CI also tests the latest release.",
   "pinned": {
     "product": "VSCodium",
     "version": "1.143.17232",
@@ -9,6 +9,8 @@
     "serverApplicationName": "codium-server",
     "resolversProposal": "microsoft/vscode@1.143.1 src/vscode-dts/vscode.proposed.resolvers.d.ts"
   },
-  "serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}${releaseSuffix}/vscodium-reh-${os}-${arch}-${version}${releaseSuffix}.tar.gz",
-  "alsoTest": ["latest"]
+  "serverDownloadUrlTemplate": "https://github.com/VSCodium/vscodium/releases/download/${version}${releaseSuffix}/vscodium-reh-web-${os}-${arch}-${version}${releaseSuffix}.tar.gz",
+  "alsoTest": [
+    "latest"
+  ]
 }

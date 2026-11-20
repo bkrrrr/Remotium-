@@ -2,39 +2,33 @@
 
 ## Why VSCodium only
 
-Remotium is meant to be offered as a **hosted service**: a Remotium Server that many
-users connect through, with dev containers that run a remote extension host
-(REH) for them.
+remotium-host runs a VSCodium remote server on a machine and lets browsers and desktop
+editors use it.
 
-- **Microsoft VS Code Server** is distributed under the Microsoft Software
-  License for VS Code Server. It does not allow hosting the server or offering
-  it "for others to use" as a service. Baking it into images we redistribute is
-  not allowed either.
-- **Microsoft VS Code desktop** only accepts a server with exactly its own build
-  commit, which means only Microsoft's server. So it can't be paired with an
-  MIT-licensed server.
-- **VSCodium** builds both the desktop editor and the REH
-  (`vscodium-reh-<os>-<arch>-<version>.tar.gz`) from the MIT-licensed Code - OSS
-  sources. We may host it, bake it into images and redistribute it, as long as
-  the license notices are kept.
+- **Microsoft VS Code Server** is under the Microsoft Software License for VS Code Server,
+  which restricts hosting it and offering it for others to use, and redistributing it.
+- **Microsoft VS Code desktop** only accepts a server with exactly its own build commit, which
+  means only Microsoft's server, so it can't be paired with an MIT-licensed one.
+- **VSCodium** builds the desktop editor and the remote server
+  (`vscodium-reh-web-<os>-<arch>-<version>.tar.gz`) from the MIT-licensed Code - OSS sources.
+  Running, hosting and redistributing it is fine as long as the license notices are kept.
 
-Extensions come from [Open VSX](https://open-vsx.org), VSCodium's default
-gallery. Microsoft-only extensions (Pylance, MS C#, Live Share, …) are licensed
-for Microsoft products only and aren't supported.
+Extensions come from [Open VSX](https://open-vsx.org), VSCodium's default gallery.
+Microsoft-only extensions (Pylance, C# Dev Kit, Live Share, …) are licensed for Microsoft
+products only.
 
 ## What we ship
 
 | Component | License | Notes |
 |-----------|---------|-------|
-| server, agent, protocol crates | MIT | this repository |
-| client extension (`remotium.client`) | MIT | contains code adapted from open-remote-ssh (MIT) and a copy of the `resolvers` proposal typings from Code - OSS (MIT) |
-| VSCodium REH in the `devenv` image | MIT | downloaded unchanged from VSCodium releases; its `LICENSE.txt` and `ThirdPartyNotices.txt` stay in the server directory |
+| remotium-host | MIT | this repository; release binaries embed the client package |
+| Remotium Client (`remotium.client`) | MIT | contains code adapted from open-remote-ssh (MIT) and a copy of the `resolvers` proposal typings from Code - OSS (MIT) |
+| VSCodium remote server | MIT | downloaded by the host from VSCodium's releases at run time, unchanged; its `LICENSE.txt` and `ThirdPartyNotices.txt` stay in the server directory |
 
-See [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) for the attributions.
+See [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 
-## Obligations when you redistribute
+## When you redistribute
 
 - Keep `LICENSE` and `THIRD_PARTY_NOTICES.md` with the binaries and the VSIX.
-- Keep the server directory's license files when you bake a REH into an image.
-- Don't use the Microsoft "Visual Studio Code" trademarks or logos for your
-  service.
+- If you bake a VSCodium server into an image, keep its license files.
+- Don't use Microsoft's "Visual Studio Code" trademarks or logos.

@@ -1,8 +1,8 @@
 name: Release
 
 # Push a tag like v0.2.0 (after scripts/set-version.sh 0.2.0) to publish:
-#  - container images ghcr.io/<owner>/remotium-server and remotium-devenv (amd64 + arm64)
-#  - a GitHub Release with remotium-client.vsix and static Linux binaries, plus SHA-256 sums
+#  - a GitHub Release with remotium-host for Linux (static musl) and macOS, each with
+#    Remotium Client embedded, plus remotium-client-<version>.vsix and SHA256SUMS
 #  - remotium.client on Open VSX, if the OVSX_PAT secret is set, followed by a store test
 on:
   push:
@@ -29,83 +29,55 @@ jobs:
     needs: version
     uses: ./.github/workflows/ci.yml
 
-  images:
+  binaries:
     needs: [version, ci]
-    permissions:
-      contents: read
-      packages: write
     strategy:
       matrix:
         include:
-          - arch: amd64
+          - target: x86_64-unknown-linux-musl
             runner: ubuntu-latest
-          - arch: arm64
+            name: linux-x86_64
+          - target: aarch64-unknown-linux-musl
             runner: ubuntu-24.04-arm
+            name: linux-aarch64
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            name: macos-x86_64
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            name: macos-aarch64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push ${{ matrix.arch }} images
+          targets: ${{ matrix.target }}
+      - name: musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools >/dev/null
+      - uses: actions/download-artifact@v4
+        with:
+          name: remotium-client-vsix
+          path: vsix
+      - name: Build (client embedded)
+        env:
+          REMOTIUM_CLIENT_VSIX: ${{ github.workspace }}/vsix/remotium-client.vsix
         run: |
-          set -eu
-          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
-          v=${{ needs.version.outputs.version }}
-          for img in server devenv; do
-            file=deploy/Dockerfile.server; [ "$img" = devenv ] && file=deploy/devenv/Dockerfile
-            tag="ghcr.io/$owner/remotium-$img:$v-${{ matrix.arch }}"
-            docker build -f "$file" -t "$tag" \
-              --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-              --label org.opencontainers.image.version="$v" .
-            docker push "$tag"
-          done
-      - name: Extract binaries
-        run: |
-          set -eu
-          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
-          v=${{ needs.version.outputs.version }}
-          arch=$([ "${{ matrix.arch }}" = amd64 ] && echo x86_64 || echo aarch64)
+          cargo build --release --locked -p remotium-host --target ${{ matrix.target }}
           mkdir -p dist
-          c=$(docker create "ghcr.io/$owner/remotium-server:$v-${{ matrix.arch }}")
-          docker cp "$c:/usr/local/bin/remotium-server" "dist/remotium-server-$v-linux-$arch-musl"
-          docker rm "$c"
-          c=$(docker create "ghcr.io/$owner/remotium-devenv:$v-${{ matrix.arch }}")
-          docker cp "$c:/usr/local/bin/remotium-agent" "dist/remotium-agent-$v-linux-$arch-gnu"
-          docker rm "$c"
+          cp "target/${{ matrix.target }}/release/remotium-host" "dist/remotium-host-${{ needs.version.outputs.version }}-${{ matrix.name }}"
+      - name: Smoke test
+        # The x86_64 macOS build runs on the arm64 runner through Rosetta, if installed; skip it.
+        if: matrix.name != 'macos-x86_64'
+        run: |
+          "dist/remotium-host-${{ needs.version.outputs.version }}-${{ matrix.name }}" --version
       - uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.arch }}
+          name: binary-${{ matrix.name }}
           path: dist/
 
-  manifests:
-    needs: [version, images]
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Multi-arch tags
-        run: |
-          set -eu
-          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
-          v=${{ needs.version.outputs.version }}
-          for img in server devenv; do
-            base="ghcr.io/$owner/remotium-$img"
-            extra=""
-            case "$v" in *-*) ;; *) extra="-t $base:latest" ;; esac   # no "latest" for pre-releases
-            # shellcheck disable=SC2086 # $extra is zero or two words on purpose
-            docker buildx imagetools create -t "$base:$v" $extra "$base:$v-amd64" "$base:$v-arm64"
-          done
-
   github-release:
-    needs: [version, ci, images]
+    needs: [version, binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,20 +94,18 @@ jobs:
           v=${{ needs.version.outputs.version }}
           mkdir -p dist
           cp artifacts/remotium-client-vsix/remotium-client.vsix "dist/remotium-client-$v.vsix"
-          cp artifacts/binaries-amd64/* artifacts/binaries-arm64/* dist/
-          chmod +x dist/remotium-server-* dist/remotium-agent-*
+          cp artifacts/binary-*/* dist/
+          chmod +x dist/remotium-host-*
           (cd dist && sha256sum -- * > SHA256SUMS)
-          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
           prerelease=""; case "$v" in *-*) prerelease="--prerelease" ;; esac
           cat > notes.md <<EOF
-          Container images:
+          **remotium-host** (on the machine with your code): download the binary for your system,
+          then \`chmod +x\` it and run \`./remotium-host --folder ~/project\`. It prints a pairing link.
 
-              docker pull ghcr.io/$owner/remotium-server:$v
-              docker pull ghcr.io/$owner/remotium-devenv:$v
+          **Remotium Client** (desktop VSCodium): \`remotium-client-$v.vsix\`, or the download on the
+          host's pairing page. Browsers need nothing.
 
-          Remotium Client: install \`remotium-client-$v.vsix\` in VSCodium (drag it onto the
-          Extensions view), or use the download / install command on your server's dashboard.
-          Checksums are in \`SHA256SUMS\`.
+          Checksums: \`SHA256SUMS\`.
           EOF
           gh release create "$GITHUB_REF_NAME" dist/* --title "Remotium $v" --notes-file notes.md --generate-notes $prerelease
 
@@ -166,7 +136,7 @@ jobs:
           npx --yes ovsx@1.3.0 publish vsix/remotium-client.vsix -p "$OVSX_PAT" --skip-duplicate $pre
 
       # Store test: install the published version from Open VSX, as users will, and run the
-      # first-install e2e (setup, restart, remote window) against a local stack.
+      # first-install e2e (setup, restart, pair, connect) against a local remotium-host.
       - name: Wait until Open VSX serves the new version
         if: env.OVSX_PAT != ''
         run: |
@@ -176,20 +146,18 @@ jobs:
             sleep 10
           done
           echo "Open VSX doesn't list remotium.client $v after 10 minutes" >&2; exit 1
-      - name: Download VSCodium
+      - uses: dtolnay/rust-toolchain@stable
         if: env.OVSX_PAT != ''
-        run: |
-          v=$(jq -r '.pinned.version + (if .pinned.release then "." + .pinned.release else "" end)' compat.json)
-          mkdir -p "$RUNNER_TEMP/vscodium"
-          curl -fsSL "https://github.com/VSCodium/vscodium/releases/download/$v/VSCodium-linux-x64-$v.tar.gz" | tar -xz -C "$RUNNER_TEMP/vscodium"
-          echo "VSCODIUM_PATH=$RUNNER_TEMP/vscodium/codium" >> "$GITHUB_ENV"
       - name: Install from Open VSX and connect
         if: env.OVSX_PAT != ''
         env:
           E2E_CODIUM_ARGS: --no-sandbox
         run: |
+          v=$(jq -r '.pinned.version + (if .pinned.release then "." + .pinned.release else "" end)' compat.json)
+          mkdir -p "$RUNNER_TEMP/vscodium"
+          curl -fsSL "https://github.com/VSCodium/vscodium/releases/download/$v/VSCodium-linux-x64-$v.tar.gz" | tar -xz -C "$RUNNER_TEMP/vscodium"
+          export VSCODIUM_PATH="$RUNNER_TEMP/vscodium/codium"
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgbm1 libnss3 libasound2t64 >/dev/null
-          docker compose -f deploy/docker-compose.yml up --build -d
-          for _ in $(seq 1 60); do curl -fs localhost:8080/api/v1/status | grep -q '"envsOnline":1' && break; sleep 2; done
+          cargo build --locked -p remotium-host
           npm --prefix client ci
           xvfb-run -a node client/test/e2e/first-install.js --vsix "remotium.client@${{ needs.version.outputs.version }}" --work "$RUNNER_TEMP/store-test"

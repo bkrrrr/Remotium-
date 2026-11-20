@@ -1,7 +1,7 @@
 {
   "name": "client",
   "displayName": "Remotium",
-  "description": "Open VSCodium on your own machines over HTTPS, through remotium-host. No broker, no SSH.",
+  "description": "Open VSCodium on your own machines over HTTPS, through remotium-host.",
   "publisher": "remotium",
   "version": "0.1.0",
   "license": "MIT",

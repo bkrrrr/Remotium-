@@ -2,98 +2,58 @@
 
 ```mermaid
 flowchart LR
-  subgraph Desktop
-    E[VSCodium] --- X["remotium.client<br/>(resolver: ManagedResolvedAuthority)"]
+  subgraph Desktop["your computer"]
+    B[Browser]
+    E[VSCodium] --- C["Remotium Client<br/>(ManagedResolvedAuthority)"]
   end
-  subgraph Public["Public machine (DNS + TLS)"]
-    P[optional reverse / auth proxy] --> B[server]
+  subgraph Host["machine with the code"]
+    H[remotium-host] --> R1["VSCodium server (REH)<br/>commit A"]
+    H --> R2["VSCodium server (REH)<br/>commit B"]
   end
-  subgraph DevEnv["Dev container (may be behind NAT)"]
-    A[agent] --> R1["codium-server<br/>commit A"]
-    A --> R2["codium-server<br/>commit B"]
-  end
-  X -- "HTTPS: tickets, tokens, sessions" --> P
-  X -- "WSS per editor connection<br/>/data/v1/stream" --> P
-  A -- "one WSS + yamux<br/>/agent/v1/connect" --> P
+  B -- "HTTPS: UI + WebSocket (proxied)" --> H
+  C -- "HTTPS: pair, session<br/>WSS: one per editor connection" --> H
 ```
 
-Both the editor and the dev container only make **outbound** connections. The server is the
-only component that needs a public address.
+## remotium-host
 
-## Launch flow
+- **HTTPS** with a self-signed certificate (fingerprint pinned by clients), your own
+  certificate, or plain HTTP behind your proxy.
+- **Pairing:** `remotium-host pair` creates a single-use code (10 minutes). A browser
+  exchanges it for a device cookie, VSCodium for a device token. Only SHA-256 hashes are
+  stored (`state.json`, shared by the running host and the CLI under a file lock).
+- **VSCodium servers:** one per editor commit, from VSCodium's releases
+  (`vscodium-reh-web-*`, which serves both desktop clients and the browser UI). Downloads
+  are sha256-checked, extracted to a temp dir, checked for the requested commit and renamed
+  into place. Servers listen on 127.0.0.1 with a connection token, run in their own process
+  group, stop after 30 minutes without connections, and are adopted by a restarted host.
+  Unused installs are deleted after 14 days.
+- **Browser:** everything except `/pair` and `/remotium/*` needs the device cookie and is
+  reverse-proxied (HTTP and WebSocket) to the server for the release pinned in
+  `compat.json`.
+- **Desktop:** `POST /remotium/v1/session` makes sure a server for the client's commit runs
+  and returns its connection token; every editor connection is a WebSocket on
+  `/remotium/v1/stream`, piped to that server's TCP port.
 
-```mermaid
-sequenceDiagram
-  participant U as Browser
-  participant B as Server
-  participant C as VSCodium + client
-  participant A as Agent
-  U->>B: GET / (identity from auth proxy)
-  U->>B: POST /launch (env, project)
-  B-->>U: vscodium://remotium.client/connect?ticket=…
-  U->>C: open link
-  C->>B: POST /api/v1/tokens {ticket}
-  B-->>C: access + refresh token
-  C->>C: open vscode-remote://remotium+env/workspace/project
-  C->>B: POST /api/v1/sessions {env, commit, version}
-  B->>A: ensureServer (control stream)
-  A->>A: download/verify/start REH for commit (or reuse)
-  A-->>B: connectionToken
-  B-->>C: sessionId, streamUrl, streamToken, connectionToken
-  loop every editor connection (and reconnect)
-    C->>B: WSS /data/v1/stream (Bearer streamToken)
-    B->>A: new yamux stream + header {commit, sessionId}
-    A->>A: TCP connect 127.0.0.1:<REH port>
-    A-->>B: {ok}
-    B-->>C: 101 Switching Protocols, then raw bytes both ways
-  end
-```
+## Remotium Client
 
-## Components
+Registers the `remotium` remote authority resolver. `resolve()` calls the session endpoint
+and returns `ManagedResolvedAuthority(makeConnection, connectionToken)`. The editor calls
+`makeConnection` for every connection it needs (management, extension host, forwarded ports,
+reconnects); each opens one WebSocket. The editor runs its own protocol inside, including the
+handshake with the server and session resumption.
 
-**Client** (`client/`). Registers the `remotium` remote authority resolver. `resolve()`
-creates a session and returns `ManagedResolvedAuthority(makeConnection, connectionToken)`.
-The editor calls `makeConnection` for every connection it needs (management, extension host,
-each forwarded-port connection, every reconnect). Each call opens one binary WebSocket. The
-editor runs its own protocol inside it, including the HTTP-upgrade handshake to the REH and
-session resumption with replay of unacknowledged messages.
+For self-signed hosts every HTTPS/WSS connection is checked against the paired certificate
+fingerprint before a request is written.
 
-**Server** (`crates/server`). Control plane (`/`, `/launch`, `/api/v1/*`) and data plane
-(`/data/*`, `/agent/*`), on one listener or two (`data_listen`). Keeps a registry of
-connected agents (one per env), short-lived tickets, sessions and stream tokens in memory,
-and client tokens (hashed) in `state_file`. For each client WebSocket it opens a yamux stream
-to the env's agent *before* completing the upgrade, then copies bytes.
-
-**Agent** (`crates/agent`). One persistent WSS to the server carrying yamux. The agent opens
-stream 1 as the control stream; every other stream is opened by the server for one client
-connection. The agent keeps one REH per editor commit:
-
-- install from a read-only search path (pre-baked in the image) or download into
-  `/data/servers/<commit>`, sha256-checked, extracted to a temp dir, commit verified, renamed
-  into place; concurrent requests for one commit share one download,
-- start on 127.0.0.1 with a connection token file (token kept across restarts),
-- stop after `AGENT_IDLE_TIMEOUT_SECS` without connections, delete installs unused for
-  `AGENT_REAP_AFTER_DAYS`.
-
-REH processes run in their own process group and log to a file, so they outlive the agent.
-A restarted agent adopts them from `server.json` (pid, port), and editor sessions continue.
+If VSCodium doesn't allow the extension's proposed API yet, the extension still activates,
+offers to add itself to `argv.json` and asks for a restart.
 
 ## Reliability
 
-- **Keepalive:** WebSocket pings every 25 s (configurable) on all hops, below common proxy
-  idle timeouts. A link that receives nothing for 3–4 intervals, and doesn't answer a ping
-  sent at least one interval earlier, is treated as dead. After our own process was stalled
-  (e.g. a suspended Docker VM: a keepalive tick arrives far too late) the silence isn't held
-  against the peer; frames already waiting are read first and a fresh ping is sent. The client
-  drops a WebSocket that gets no pong for 40 s, so half-open connections (NAT, proxies,
-  container restarts behind Docker's port proxy) are noticed quickly.
-- **Agent link:** reconnects with jittered exponential backoff (1 s … 60 s). A newer
-  connection for the same env replaces the old one.
-- **Server restart:** client tokens survive (state file). Sessions don't. The client gets a 401
-  on its next stream, creates a new session and reconnects, all within the editor's
-  reconnection, without reloading the window.
-- **Backpressure:** yamux per-stream flow control, with the link's receive window capped at
-  `MAX_STREAMS × 256 KiB`, propagates through to TCP on both ends. A client that stops
-  reading stalls its writer after a few MiB (see `backpressure_bounds_buffering`).
-  `ManagedMessagePassing` has an optional `drain()`, which the client implements on top of
-  `ws.bufferedAmount`.
+- WebSocket pings every 25 s. A peer is dead after silence plus an unanswered ping; after the
+  host's own process was stalled (e.g. a suspended VM) it reads waiting frames first and
+  probes again before giving up. The client drops a WebSocket with no pong for 40 s.
+- A host restart doesn't stop the VSCodium servers, so editors and browsers reconnect into
+  their running sessions.
+- Backpressure is TCP's: the host copies between the WebSocket and the server's socket with
+  bounded buffers, so a client that stops reading stalls its sender.

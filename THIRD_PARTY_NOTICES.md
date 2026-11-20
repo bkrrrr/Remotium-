@@ -2,7 +2,7 @@
 
 ## open-remote-ssh
 Parts of `client/src/productInfo.ts` and the server download template logic in
-`crates/agent/src/reh.rs` are adapted from
+`crates/host/src/manager.rs` are adapted from
 [jeanp413/open-remote-ssh](https://github.com/jeanp413/open-remote-ssh).
 
     MIT License
@@ -27,8 +27,7 @@ Parts of `client/src/productInfo.ts` and the server download template logic in
 Copyright (c) Microsoft Corporation. MIT License.
 
 ## VSCodium
-The `devenv` image downloads and bundles the VSCodium remote extension host
-(`vscodium-reh-*`), built from Code - OSS by the
-[VSCodium](https://github.com/VSCodium/vscodium) project. MIT License.
-Its own license and third-party notice files ship inside the extracted server
-directory and are kept unchanged.
+remotium-host downloads the VSCodium remote server (`vscodium-reh-web-*`), built from
+Code - OSS by the [VSCodium](https://github.com/VSCodium/vscodium) project, MIT License, and
+runs it unchanged. Its license and third-party notice files stay inside the extracted server
+directory.

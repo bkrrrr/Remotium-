@@ -103,7 +103,7 @@ impl ServerManager {
         std::fs::create_dir_all(&cfg.state_dir)?;
         crate::install_crypto_provider();
         let http = reqwest::Client::builder()
-            .user_agent(concat!("remotium-agent/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("remotium-host/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(30))
             .build()?;
         Ok(Arc::new(Self { cfg, http, slots: Mutex::new(HashMap::new()) }))

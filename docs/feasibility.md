@@ -1,5 +1,9 @@
 # Feasibility (M0 spike)
 
+> Historical: this spike predates the current design (remotium-host, no broker). The
+> finding that matters still holds: a VSCodium remote window can run over a WebSocket the
+> extension provides.
+
 **Question:** can a VSCodium desktop editor talk to a VSCodium REH over a WebSocket that
 our own extension provides, without modifying the editor and without SSH or a local TCP
 port?
