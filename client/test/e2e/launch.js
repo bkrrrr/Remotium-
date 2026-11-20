@@ -1,7 +1,13 @@
-// Launch an isolated VSCodium with the extension under development and run a test file in it.
+// Launch an isolated VSCodium with the extension and run a test file in it.
 //   node test/e2e/launch.js [--codium <VSCodium executable>] [--folder-uri <uri>] [--tests smoke.js]
 //                           [--settings <json>] [--work <dir>] [--profile <dir>] [--keep-profile]
+//                           [--vsix <file|url>] [--no-proposed-flag] [--portable <dir>]
 // --profile reuses a user-data dir across runs.
+// --vsix installs that package (as users would) instead of loading the extension from source.
+// --no-proposed-flag leaves out --enable-proposed-api, so argv.json has to provide it.
+// --portable runs the editor in portable mode with that data dir. It then reads <dir>/argv.json
+// instead of ~/.vscode-oss/argv.json, so argv.json handling is tested without touching the real
+// one. (Never change HOME for this: on macOS the editor then can't find the login keychain.)
 // --launch-link <uri> runs the server flow instead of a test file: the helper extension opens
 // the link in a local window, then runs smoke.js in the remote window that opens.
 const { spawn } = require('child_process');
@@ -30,7 +36,9 @@ const launchLink = arg('launch-link');
 // characters, so the profile always goes into a short temp dir.
 const profile = arg('profile') || fs.mkdtempSync(path.join(os.tmpdir(), 'ot-'));
 const keepProfile = process.argv.includes('--keep-profile') || !!arg('profile');
-const userData = path.join(profile, 'ud');
+// In portable mode the editor always uses <portable>/user-data, whatever --user-data-dir says.
+const portableDir = arg('portable');
+const userData = portableDir ? path.join(path.resolve(portableDir), 'user-data') : path.join(profile, 'ud');
 fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
 fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify({
 	'security.workspace.trust.enabled': false,
@@ -54,17 +62,52 @@ const resultFile = path.join(work, 'result.json');
 try { fs.unlinkSync(resultFile); } catch { }
 
 const extRoot = path.resolve(__dirname, '..', '..');
+const vsix = arg('vsix');
+const portable = arg('portable');
+if (portable) fs.mkdirSync(portable, { recursive: true });
+const childEnv = { ...process.env, SMOKE_RESULT: resultFile, ...(portable ? { VSCODE_PORTABLE: path.resolve(portable) } : {}) };
+// When launched from inside another VS Code, this would make the editor run as plain Node.
+delete childEnv.ELECTRON_RUN_AS_NODE;
+
+/** The `codium` command-line script next to the editor executable. */
+function cliPath() {
+	if (process.env.VSCODIUM_CLI) return process.env.VSCODIUM_CLI;
+	const dir = path.dirname(codium);
+	const candidates = process.platform === 'darwin'
+		? [path.join(dir, '..', 'Resources', 'app', 'bin', 'codium')]
+		: process.platform === 'win32'
+			? [path.join(dir, 'bin', 'codium.cmd')]
+			: [path.join(dir, 'bin', 'codium')];
+	return candidates.find(c => fs.existsSync(c)) || 'codium';
+}
+
+async function installVsix() {
+	let file = vsix;
+	if (/^https?:\/\//.test(vsix)) {
+		const res = await fetch(vsix);
+		if (!res.ok) throw new Error(`download ${vsix}: HTTP ${res.status}`);
+		file = path.join(work, 'remotium-client.vsix');
+		fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+	}
+	const r = require('child_process').spawnSync(cliPath(), [
+		'--user-data-dir', userData, '--extensions-dir', path.join(profile, 'ext'),
+		'--install-extension', path.resolve(file), '--force',
+	], { env: childEnv, encoding: 'utf8', shell: process.platform === 'win32' });
+	console.log(`[install] ${(r.stdout || '').trim()} ${(r.stderr || '').trim()}`.trim());
+	if (r.status !== 0) throw new Error(`installing ${file} failed (exit ${r.status})`);
+}
+
 const args = [
 	'--user-data-dir', userData,
 	'--extensions-dir', path.join(profile, 'ext'),
 	// Otherwise the instance shares ~/.vscode-oss-shared with a running everyday VSCodium and
 	// can hang at startup waiting for it.
 	'--shared-data-dir', path.join(profile, 'shared'),
-	'--extensionDevelopmentPath', extRoot,
+	...(vsix ? [] : ['--extensionDevelopmentPath', extRoot]),
 	...(launchLink
 		? ['--extensionDevelopmentPath', path.join(__dirname, 'helper')]
 		: ['--extensionTestsPath', tests]),
-	'--enable-proposed-api', 'remotium.client',
+	...(process.argv.includes('--no-proposed-flag') ? [] : ['--enable-proposed-api', 'remotium.client']),
 	'--disable-workspace-trust',
 	'--skip-welcome', '--skip-release-notes', '--disable-gpu',
 	...(folderUri ? ['--folder-uri', folderUri] : []),
@@ -73,11 +116,10 @@ const args = [
 	// Extra editor flags, e.g. --no-sandbox on CI runners that restrict user namespaces.
 	...(process.env.E2E_CODIUM_ARGS ? process.env.E2E_CODIUM_ARGS.split(/\s+/).filter(Boolean) : []),
 ];
+(async () => {
+if (vsix) await installVsix();
 console.log(`launching ${codium}`);
-const env = { ...process.env, SMOKE_RESULT: resultFile };
-// When launched from inside another VS Code, this would make the editor run as plain Node.
-delete env.ELECTRON_RUN_AS_NODE;
-const child = spawn(codium, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+const child = spawn(codium, args, { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
 const logFile = fs.createWriteStream(path.join(work, 'codium.log'));
 child.stdout.pipe(logFile);
 child.stderr.pipe(logFile);
@@ -110,3 +152,4 @@ child.on('exit', code => {
 	console.log(`exit ${code}, logs in ${work}`);
 	process.exit(result?.ok ? 0 : 1);
 });
+})().catch(e => { console.error(e); process.exit(1); });

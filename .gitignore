@@ -10,3 +10,4 @@ deploy/server.toml
 !deploy/server.dev.toml
 .DS_Store
 client/THIRD_PARTY_NOTICES.md
+out-test/

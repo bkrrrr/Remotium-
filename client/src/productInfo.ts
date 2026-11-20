@@ -11,6 +11,7 @@ export interface ProductInfo {
 	release?: string;
 	urlProtocol: string;
 	nameShort: string;
+	dataFolderName: string;
 }
 
 let cached: ProductInfo | undefined;
@@ -33,6 +34,7 @@ export function getProductInfo(): ProductInfo {
 		release: product.release,
 		urlProtocol: product.urlProtocol ?? vscode.env.uriScheme,
 		nameShort: product.nameShort ?? vscode.env.appName,
+		dataFolderName: product.dataFolderName ?? '.vscode-oss',
 	};
 	return cached;
 }

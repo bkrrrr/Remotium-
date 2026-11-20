@@ -7,7 +7,12 @@ import { AUTHORITY_PREFIX } from './resolver';
  * dashboard: trades the one-time ticket for tokens and opens the remote folder.
  */
 export class LaunchUriHandler implements vscode.UriHandler {
-	constructor(private readonly auth: AuthStore, private readonly log: vscode.LogOutputChannel) {}
+	constructor(
+		private readonly auth: AuthStore,
+		private readonly log: vscode.LogOutputChannel,
+		/** Resolves to false (after offering setup) when the remote API isn't enabled yet. */
+		private readonly ready: () => boolean | Promise<boolean>,
+	) {}
 
 	async handleUri(uri: vscode.Uri): Promise<void> {
 		await this.handle(uri, true);
@@ -17,6 +22,10 @@ export class LaunchUriHandler implements vscode.UriHandler {
 	async handle(uri: vscode.Uri, openFolder: boolean): Promise<boolean> {
 		if (uri.path !== '/connect') {
 			this.log.warn(`ignoring unknown URI path ${uri.path}`);
+			return false;
+		}
+		if (!(await this.ready())) {
+			this.log.warn('launch link ignored: finish the setup and restart VSCodium first');
 			return false;
 		}
 		const q = new URLSearchParams(uri.query);

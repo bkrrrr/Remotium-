@@ -16,6 +16,12 @@ exports.activate = async function activate() {
 			process.env.SMOKE_RESULT = resultFile;
 			const suite = cfg.get('suite') || 'smoke';
 			await require(path.join(__dirname, '..', `${suite}.js`)).run().catch(() => {});
+		} else if (cfg.get('suite') === 'setup') {
+			// First run after installing: do what the "Set Up" button does, then check argv.json.
+			const ok = await vscode.commands.executeCommand('remotium.setUp', { confirm: false });
+			const argv = path.join(process.env.VSCODE_PORTABLE || path.join(require('os').homedir(), '.vscode-oss'), 'argv.json');
+			const text = fs.readFileSync(argv, 'utf8');
+			write({ ok: ok === true && text.includes('"remotium.client"'), steps: [`setUp returned ${ok}`, `argv.json: ${text.replace(/\s+/g, ' ').slice(-160)}`] });
 		} else {
 			const ok = await vscode.commands.executeCommand('remotium.openLaunchLink', cfg.get('launchLink'));
 			if (ok) return; // The remote window takes over.
