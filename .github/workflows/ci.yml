@@ -1,5 +1,7 @@
 name: CI
 
+# One pipeline: test, build the release files, test those files end to end, and on main
+# publish them when the version (Cargo.toml = client/package.json) has no release yet.
 on:
   push:
     branches: [main]
@@ -8,15 +10,13 @@ on:
   schedule:
     - cron: "0 5 * * 1"
   workflow_dispatch:
-  # The release workflow runs the same checks before publishing anything.
-  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  rust:
-    name: Server (remotium-host) · ${{ matrix.os }}
+  server-tests:
+    name: Server · tests (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -28,36 +28,89 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Test (unit + host integration with a fake VSCodium server)
+      - name: Unit + integration tests (fake VSCodium server)
         run: cargo test --workspace --locked
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   client:
-    name: Client (VSCodium extension)
+    name: Client · tests and package
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: client
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+      - id: v
+        name: One version for server and client
+        run: echo "version=$(scripts/version.sh)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
-      - run: npm ci
-      - run: npm run test:unit
-      - run: npm run package
+      - run: npm --prefix client ci
+      - run: npm --prefix client run test:unit
+      - run: npm --prefix client run package
       - uses: actions/upload-artifact@v7
         with:
-          name: client - VSCodium extension (VSIX)
+          name: client - remotium-client.vsix
           path: client/remotium-client.vsix
 
-  # Real VSCodium (under Xvfb) and headless Chromium against a real remotium-host.
+  # The files a release publishes. End-to-end tests run against these.
+  server-build:
+    name: Server · build ${{ matrix.name }}
+    needs: client
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            name: linux-x86_64
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+            name: linux-aarch64
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            name: macos-x86_64
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            name: macos-aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools >/dev/null
+      - uses: actions/download-artifact@v8
+        with:
+          name: client - remotium-client.vsix
+          path: vsix
+      - name: Build (client embedded)
+        env:
+          REMOTIUM_CLIENT_VSIX: ${{ github.workspace }}/vsix/remotium-client.vsix
+        run: |
+          cargo build --release --locked -p remotium-host --target ${{ matrix.target }}
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/remotium-host" "dist/remotium-host-${{ needs.client.outputs.version }}-${{ matrix.name }}"
+      - name: Runs
+        # The x86_64 macOS build is cross-compiled on an arm64 runner; skip running it.
+        if: matrix.name != 'macos-x86_64'
+        run: '"dist/remotium-host-${{ needs.client.outputs.version }}-${{ matrix.name }}" --version'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server - remotium-host ${{ matrix.name }}
+          path: dist/
+
+  # Real VSCodium (under Xvfb) and headless Chromium against the built remotium-host and VSIX.
   e2e:
     name: End-to-end · VSCodium ${{ matrix.vscodium }}
-    needs: [rust, client]
+    needs: [client, server-build]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -66,13 +119,24 @@ jobs:
         vscodium: [pinned, latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: client/package-lock.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: server - remotium-host linux-x86_64
+          path: built
+      - uses: actions/download-artifact@v8
+        with:
+          name: client - remotium-client.vsix
+          path: built
+      - name: Use the built files
+        run: |
+          chmod +x built/remotium-host-*
+          echo "REMOTIUM_HOST_BIN=$(ls "$PWD"/built/remotium-host-*)" >> "$GITHUB_ENV"
+          echo "REMOTIUM_CLIENT_VSIX=$PWD/built/remotium-client.vsix" >> "$GITHUB_ENV"
 
       - name: Pick the VSCodium version
         id: version
@@ -85,17 +149,9 @@ jobs:
             v=$(gh api repos/VSCodium/vscodium/releases/latest --jq .tag_name)
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "VSCodium $v"
-
-      - name: Download VSCodium
-        run: |
-          v=${{ steps.version.outputs.version }}
           mkdir -p "$RUNNER_TEMP/vscodium"
           curl -fsSL "https://github.com/VSCodium/vscodium/releases/download/$v/VSCodium-linux-x64-$v.tar.gz" | tar -xz -C "$RUNNER_TEMP/vscodium"
           echo "VSCODIUM_PATH=$RUNNER_TEMP/vscodium/codium" >> "$GITHUB_ENV"
-
-      - name: Build remotium-host
-        run: cargo build --locked -p remotium-host
 
       - name: Install test dependencies
         run: |
@@ -103,25 +159,120 @@ jobs:
           npm --prefix client ci
           npx --prefix client playwright install --with-deps chromium
 
-      - name: First install with the packaged client (setup, restart, pair, connect)
+      - name: First install of the client (setup, restart, pair, connect)
         env:
           E2E_CODIUM_ARGS: --no-sandbox
-        run: |
-          mkdir -p "$RUNNER_TEMP/e2e"
-          xvfb-run -a npm --prefix client run test:e2e:vsix -- --work "$RUNNER_TEMP/e2e/first-install"
+        run: xvfb-run -a node client/test/e2e/first-install.js --vsix "$REMOTIUM_CLIENT_VSIX" --work "$RUNNER_TEMP/e2e/first-install"
 
-      - name: Phase 3 (terminal, port forwarding, debugging, host restart)
+      - name: Terminal, port forwarding, debugging, server restart
         env:
           E2E_CODIUM_ARGS: --no-sandbox
-        run: xvfb-run -a npm --prefix client run test:phase3 -- --work "$RUNNER_TEMP/e2e/phase3"
+        run: xvfb-run -a node client/test/e2e/run-host.js --vsix "$REMOTIUM_CLIENT_VSIX" --suite phase3 --timeout 600000 --work "$RUNNER_TEMP/e2e/phase3"
 
       - name: Browser access (Chromium)
         if: matrix.vscodium == 'pinned'
-        run: npm --prefix client run test:browser -- --work "$RUNNER_TEMP/e2e/browser"
+        run: node client/test/e2e/run-browser.js --work "$RUNNER_TEMP/e2e/browser"
 
-      # Kept only when something failed: host log, editor log and per-step results.
+      # Kept only when something failed: server log, editor log and per-step results.
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: test logs - end-to-end with VSCodium ${{ steps.version.outputs.version }}
           path: ${{ runner.temp }}/e2e
+
+  # On main, publish the tested files when this version has no release yet.
+  release:
+    name: Release
+    needs: [client, server-tests, server-build, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      published: ${{ steps.r.outputs.published }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - id: r
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.client.outputs.version }}
+        run: |
+          set -eu
+          if git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null 2>&1; then
+            echo "v$V is already released; nothing to publish. Bump the version (scripts/set-version.sh) to release." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p dist
+          cp artifacts/server\ -\ remotium-host\ */* dist/
+          cp "artifacts/client - remotium-client.vsix/remotium-client.vsix" "dist/remotium-client-$V.vsix"
+          chmod +x dist/remotium-host-*
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          pre=""; case "$V" in *-*) pre="--prerelease" ;; esac
+          cat > notes.md <<EOF
+          **Server: remotium-host**, on the machine with your code. Download the binary for your
+          system, \`chmod +x\` it and run \`./remotium-host --folder ~/project\`. It prints a pairing
+          link for the browser and for desktop VSCodium.
+
+          **Client: Remotium Client**, for desktop VSCodium: \`remotium-client-$V.vsix\` (drag it onto
+          the Extensions view), or the download on the server's pairing page. Browsers need nothing.
+
+          Checksums: \`SHA256SUMS\`.
+          EOF
+          gh release create "v$V" dist/* --target "$GITHUB_SHA" --title "Remotium $V" --notes-file notes.md $pre
+          echo "Published v$V." >> "$GITHUB_STEP_SUMMARY"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  open-vsx:
+    name: Release · client to Open VSX
+    needs: [client, release]
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    env:
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+      V: ${{ needs.client.outputs.version }}
+    steps:
+      - name: Skip without a token
+        if: env.OVSX_PAT == ''
+        run: echo "::notice::OVSX_PAT is not set; not publishing to Open VSX. See docs/releasing.md."
+      - uses: actions/checkout@v7
+        if: env.OVSX_PAT != ''
+      - uses: actions/setup-node@v7
+        if: env.OVSX_PAT != ''
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        if: env.OVSX_PAT != ''
+        with:
+          path: built
+          merge-multiple: true
+      - name: Publish remotium.client
+        if: env.OVSX_PAT != ''
+        run: |
+          pre=""; case "$V" in *-*) pre="--pre-release" ;; esac
+          npx --yes ovsx@1.3.0 verify-pat remotium -p "$OVSX_PAT"
+          npx --yes ovsx@1.3.0 publish built/remotium-client.vsix -p "$OVSX_PAT" --skip-duplicate $pre
+      # Store test: install the published version from Open VSX, as users will, and connect
+      # to the released server binary.
+      - name: Install from Open VSX and connect
+        if: env.OVSX_PAT != ''
+        env:
+          E2E_CODIUM_ARGS: --no-sandbox
+        run: |
+          for _ in $(seq 1 60); do
+            curl -fs "https://open-vsx.org/api/remotium/client/$V" | grep -q '"files"' && break
+            sleep 10
+          done
+          v=$(jq -r '.pinned.version + (if .pinned.release then "." + .pinned.release else "" end)' compat.json)
+          mkdir -p "$RUNNER_TEMP/vscodium"
+          curl -fsSL "https://github.com/VSCodium/vscodium/releases/download/$v/VSCodium-linux-x64-$v.tar.gz" | tar -xz -C "$RUNNER_TEMP/vscodium"
+          export VSCODIUM_PATH="$RUNNER_TEMP/vscodium/codium"
+          chmod +x built/remotium-host-*-linux-x86_64
+          REMOTIUM_HOST_BIN="$(ls "$PWD"/built/remotium-host-*-linux-x86_64)"
+          export REMOTIUM_HOST_BIN
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgbm1 libnss3 libasound2t64 >/dev/null
+          npm --prefix client ci
+          xvfb-run -a node client/test/e2e/first-install.js --vsix "remotium.client@$V" --work "$RUNNER_TEMP/store-test"
