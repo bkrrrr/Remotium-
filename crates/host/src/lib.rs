@@ -2,6 +2,7 @@
 //! VSCodium with the Remotium Client extension.
 
 pub mod api;
+pub mod client;
 pub mod manager;
 pub mod platform;
 pub mod reh;
@@ -31,6 +32,8 @@ pub struct AppState {
     /// `X-Forwarded-Proto`.
     pub tls: bool,
     pub keepalive: Duration,
+    /// Remotium Client for download, if this build/config has one.
+    pub client: Option<client::ClientPackage>,
 }
 
 impl AppState {
@@ -47,6 +50,7 @@ pub fn install_crypto_provider() {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/remotium/healthz", get(|| async { "ok" }))
+        .route(client::PATH, get(client::download))
         .route("/remotium/v1/pair", post(api::pair))
         .route("/remotium/v1/info", get(api::info))
         .route("/remotium/v1/session", post(api::session))

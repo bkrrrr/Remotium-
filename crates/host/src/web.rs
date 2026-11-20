@@ -56,7 +56,8 @@ pub async fn pair_page(State(state): State<Arc<AppState>>, Query(q): Query<PairQ
          <p>After pairing, this browser can open <code>{folder}</code> on this machine.</p>\
          <form method=\"post\" action=\"pair\"><input type=\"hidden\" name=\"code\" value=\"{code}\">\
          <p><label>Name for this browser <input name=\"name\" value=\"Browser\" maxlength=\"64\"></label></p>\
-         <p><button>Pair</button></p></form>",
+         <p><button>Pair</button></p></form>{client}",
+        client = client_hint(&state),
         name = esc(&state.name),
         folder = esc(&state.folder),
         code = esc(&q.code),
@@ -87,6 +88,21 @@ pub async fn pair_submit(State(state): State<Arc<AppState>>, headers: HeaderMap,
             no_store((StatusCode::UNAUTHORIZED, page("Pairing failed", &format!("<h1>Pairing failed</h1><p>{why}</p>{AGAIN}"))).into_response())
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
+}
+
+/// Where desktop VSCodium users get the extension.
+fn client_hint(state: &AppState) -> String {
+    if state.client.is_some() {
+        format!(
+            "<hr><p>Using desktop VSCodium? <a href=\"{}\" download>Download Remotium Client</a>, drag it onto VSCodium's \
+             Extensions view, then open the VSCodium link printed by <code>remotium-host pair</code>.</p>",
+            crate::client::PATH.trim_start_matches('/')
+        )
+    } else {
+        "<hr><p>Using desktop VSCodium? Install <b>Remotium Client</b> (<code>remotium.client</code>), then open the \
+         VSCodium link printed by <code>remotium-host pair</code>.</p>"
+            .to_owned()
     }
 }
 

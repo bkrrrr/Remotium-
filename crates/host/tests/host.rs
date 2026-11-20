@@ -48,6 +48,7 @@ fn app_state(dir: &Path) -> Arc<AppState> {
         web: version(),
         tls: false,
         keepalive: Duration::from_secs(2),
+        client: Some(remotium_host::client::ClientPackage { bytes: bytes::Bytes::from_static(b"PK fake vsix"), sha256: "x".into() }),
     })
 }
 
@@ -102,6 +103,7 @@ impl Host {
         let code = self.state.store.create_pairing(None).unwrap();
         let page = self.http.get(self.url(&format!("/pair?code={code}"))).send().await.unwrap();
         assert_eq!(page.status().as_u16(), 200);
+        assert!(page.text().await.unwrap().contains("remotium/client.vsix"), "pairing page offers the client");
         let res = self.http.post(self.url("/pair")).form(&[("code", code.as_str()), ("name", "test")]).send().await.unwrap();
         assert_eq!(res.status().as_u16(), 303);
         let cookie = res.headers()["set-cookie"].to_str().unwrap().to_owned();
@@ -165,6 +167,15 @@ async fn desktop_pairing_session_and_stream() {
     let id = h.state.store.devices()[0].id.clone();
     assert!(h.state.store.revoke(&id).unwrap());
     assert_eq!(h.session(&token).await.status().as_u16(), 401);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn offers_the_client_without_pairing() {
+    let h = Host::start().await;
+    let res = h.http.get(h.url("/remotium/client.vsix")).send().await.unwrap();
+    assert_eq!(res.status().as_u16(), 200);
+    assert!(res.headers()["content-disposition"].to_str().unwrap().contains("remotium-client.vsix"));
+    assert_eq!(res.bytes().await.unwrap().as_ref(), b"PK fake vsix");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

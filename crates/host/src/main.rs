@@ -77,6 +77,9 @@ struct RunArgs {
     /// Delete downloaded servers unused for this many days.
     #[arg(long, env = "REMOTIUM_REAP_AFTER_DAYS", default_value_t = 14)]
     reap_after_days: u64,
+    /// Remotium Client package to offer for download (release builds embed one).
+    #[arg(long, env = "REMOTIUM_CLIENT_VSIX")]
+    client_vsix: Option<PathBuf>,
     /// WebSocket ping interval.
     #[arg(long, env = "REMOTIUM_KEEPALIVE_SECS", default_value_t = 25)]
     keepalive_secs: u64,
@@ -138,6 +141,7 @@ fn print_pairing(store: &Store, url: &str, name: Option<&str>) -> Result<()> {
         print!("&fp={fp}");
     }
     println!();
+    println!("  No Remotium Client in VSCodium yet? Open the browser link: its page offers the download.");
     if let Some(fp) = &pin {
         println!();
         println!("The certificate is self-signed. Browsers will warn; continue only if it shows this SHA-256 fingerprint:");
@@ -200,6 +204,7 @@ async fn run(data_dir: PathBuf, args: RunArgs) -> Result<()> {
         web: types::pinned(),
         tls: !args.plain_http,
         keepalive: Duration::from_secs(args.keepalive_secs.max(1)),
+        client: remotium_host::client::ClientPackage::load(args.client_vsix.as_deref())?,
     });
 
     tokio::spawn(async move {
