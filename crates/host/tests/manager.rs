@@ -1,5 +1,11 @@
 mod common;
 
+#[test]
+#[ignore = "fake VSCodium server, started by the tests"]
+fn fake_reh_main() {
+    common::fake_reh_main()
+}
+
 use common::*;
 use remotium_host::manager::{ManagerConfig, ServerManager};
 use remotium_host::types::{ErrorCode, ServerVersion};
@@ -26,10 +32,6 @@ fn config(root: &std::path::Path, base: std::net::SocketAddr) -> ManagerConfig {
 
 #[tokio::test]
 async fn downloads_verifies_starts_and_reuses() {
-    if !python_available() {
-        eprintln!("python3 not available; skipping");
-        return;
-    }
     let files = tempfile::tempdir().unwrap();
     let tgz = fake_reh_tarball(COMMIT);
     let name = "vscodium-reh-linux-x64-1.143.17232.tar.gz";
@@ -38,6 +40,7 @@ async fn downloads_verifies_starts_and_reuses() {
     let addr = serve_dir(files.path()).await;
 
     let root = tempfile::tempdir().unwrap();
+    let _cleanup = KillOnDrop(root.path().join("state"));
     let mgr = ServerManager::new(config(root.path(), addr)).unwrap();
 
     // Concurrent ensures for one commit: one download, one process, one token.
@@ -74,6 +77,7 @@ async fn rejects_checksum_mismatch_and_missing_versions() {
     std::fs::write(files.path().join(format!("{name}.sha256")), format!("{}  {name}\n", "0".repeat(64))).unwrap();
     let addr = serve_dir(files.path()).await;
     let root = tempfile::tempdir().unwrap();
+    let _cleanup = KillOnDrop(root.path().join("state"));
     let mgr = ServerManager::new(config(root.path(), addr)).unwrap();
 
     let err = mgr.ensure(&version(COMMIT)).await.unwrap_err();
@@ -99,6 +103,7 @@ async fn rejects_wrong_commit_in_archive() {
     std::fs::write(files.path().join(format!("{name}.sha256")), sha256_hex(&tgz)).unwrap();
     let addr = serve_dir(files.path()).await;
     let root = tempfile::tempdir().unwrap();
+    let _cleanup = KillOnDrop(root.path().join("state"));
     let mgr = ServerManager::new(config(root.path(), addr)).unwrap();
     let err = mgr.ensure(&version(COMMIT)).await.unwrap_err();
     assert!(err.message.contains("client needs"), "{}", err.message);
@@ -118,9 +123,6 @@ async fn reaps_unused_installs() {
 
 #[tokio::test]
 async fn adopts_server_after_agent_restart() {
-    if !python_available() {
-        return;
-    }
     let files = tempfile::tempdir().unwrap();
     let tgz = fake_reh_tarball(COMMIT);
     let name = "vscodium-reh-linux-x64-1.143.17232.tar.gz";
@@ -128,6 +130,7 @@ async fn adopts_server_after_agent_restart() {
     std::fs::write(files.path().join(format!("{name}.sha256")), sha256_hex(&tgz)).unwrap();
     let addr = serve_dir(files.path()).await;
     let root = tempfile::tempdir().unwrap();
+    let _cleanup = KillOnDrop(root.path().join("state"));
 
     let first = ServerManager::new(config(root.path(), addr)).unwrap();
     let token = first.ensure(&version(COMMIT)).await.unwrap();
