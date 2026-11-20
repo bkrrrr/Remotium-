@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   server-tests:
-    name: Server · tests (${{ matrix.os }})
+    name: Server · unit tests from source (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -40,7 +40,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   client:
-    name: Client · tests and package
+    name: Client · unit tests + package VSIX
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
@@ -73,7 +73,7 @@ jobs:
 
   # The files a release publishes. End-to-end tests run against these.
   server-build:
-    name: Server · build ${{ matrix.name }}
+    name: Server · release binary ${{ matrix.name }}
     needs: client
     strategy:
       matrix:
@@ -124,7 +124,7 @@ jobs:
 
   # Real VSCodium (under Xvfb) and headless Chromium against the built remotium-host and VSIX.
   e2e:
-    name: End-to-end · VSCodium ${{ matrix.vscodium }}
+    name: End-to-end on release files · VSCodium ${{ matrix.vscodium }}
     needs: [client, server-build]
     runs-on: ubuntu-latest
     timeout-minutes: 45

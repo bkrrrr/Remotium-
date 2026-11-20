@@ -8,11 +8,11 @@ differ.
 
 Everything is one workflow, `.github/workflows/ci.yml`:
 
-1. **Server · tests** and **Client · tests and package**: Rust tests and clippy, client unit
-   tests, the VSIX.
-2. **Server · build**: the release binaries (Linux x86_64/aarch64 static musl, macOS
+1. **Server · unit tests from source** and **Client · unit tests + package VSIX**: Rust tests
+   and clippy (compiled from source by the job itself), client unit tests, the VSIX.
+2. **Server · release binary**: the release binaries (Linux x86_64/aarch64 static musl, macOS
    x86_64/aarch64), each with the client embedded.
-3. **End-to-end**: real VSCodium and Chromium against **those** files: the Linux binary and
+3. **End-to-end on release files**: real VSCodium and Chromium against **those** files: the Linux binary and
    the VSIX that a release would publish.
 4. **Release v&lt;version&gt;** (pushes to `main` only, and only if tag `v<version>` doesn't exist
    yet; otherwise the job shows as skipped). Its steps:
